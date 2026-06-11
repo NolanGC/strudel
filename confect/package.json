@@ -1,0 +1,18 @@
+{
+  "name": "strudel-confect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "codegen": "confect codegen"
+  },
+  "dependencies": {
+    "@confect/cli": "^9.0.1",
+    "@confect/core": "^9.0.1",
+    "@confect/server": "^9.0.1",
+    "@effect/platform": "^0.96.1",
+    "@effect/platform-node": "^0.106.0",
+    "convex": "^1.41.0",
+    "effect": "^3.21.2"
+  }
+}
