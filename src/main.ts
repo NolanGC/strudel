@@ -1,19 +1,24 @@
-import { Array, Effect, Match as M, Option, Schema as S, Stream, String } from 'effect'
+import { Array, Effect, Match as M, Option, Queue, Schema as S, Stream, String } from 'effect'
 import { Command, Runtime, Subscription } from 'foldkit'
 import { Document, Html, html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { evo } from 'foldkit/struct'
 
-import { ConvexTodos } from './convexTodos'
+import todosTable from '../confect/_generated/tables/todos'
+import { api } from '../convex/_generated/api'
+import { confectTableFieldsToFoldkitDocSchema } from './confectSchemaCompat'
+import { ConvexClient } from './convexClient'
 
 // MODEL
 
-const Todo = S.Struct({
-  id: S.String,
-  text: S.String,
-  createdAt: S.Number,
-})
+const Todo = confectTableFieldsToFoldkitDocSchema(
+  todosTable.tableName,
+  todosTable.Fields,
+)
 type Todo = typeof Todo.Type
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : globalThis.String(error)
 
 const LoadState = S.Literals(['Loading', 'Loaded', 'Failed'])
 type LoadState = typeof LoadState.Type
@@ -32,6 +37,9 @@ export const UpdatedNewTodo = m('UpdatedNewTodo', { text: S.String })
 export const AddedTodo = m('AddedTodo')
 export const CreatedTodo = m('CreatedTodo')
 export const FailedCreateTodo = m('FailedCreateTodo', { error: S.String })
+export const ClickedDeleteTodo = m('ClickedDeleteTodo', { id: S.String })
+export const DeletedTodo = m('DeletedTodo')
+export const FailedDeleteTodo = m('FailedDeleteTodo', { error: S.String })
 export const LoadedTodos = m('LoadedTodos', { todos: S.Array(Todo) })
 export const FailedLoadTodos = m('FailedLoadTodos', { error: S.String })
 
@@ -40,6 +48,9 @@ export const Message = S.Union([
   AddedTodo,
   CreatedTodo,
   FailedCreateTodo,
+  ClickedDeleteTodo,
+  DeletedTodo,
+  FailedDeleteTodo,
   LoadedTodos,
   FailedLoadTodos,
 ])
@@ -66,7 +77,7 @@ export const init: Runtime.ProgramInit<Model, Message, Flags> = () => [
 
 type UpdateReturn = readonly [
   Model,
-  ReadonlyArray<Command.Command<Message, never, ConvexTodos>>,
+  ReadonlyArray<Command.Command<Message, never, ConvexClient>>,
 ]
 
 const withUpdateReturn = M.withReturnType<UpdateReturn>()
@@ -103,6 +114,18 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         [],
       ],
 
+      ClickedDeleteTodo: ({ id }) => [
+        evo(model, { maybeError: () => Option.none() }),
+        [DeleteTodo({ id })],
+      ],
+
+      DeletedTodo: () => [model, []],
+
+      FailedDeleteTodo: ({ error }) => [
+        evo(model, { maybeError: () => Option.some(error) }),
+        [],
+      ],
+
       LoadedTodos: ({ todos }) => [
         evo(model, {
           todos: () => todos,
@@ -131,11 +154,32 @@ export const CreateTodo = Command.define(
   FailedCreateTodo,
 )(({ text }) =>
   Effect.gen(function* () {
-    const todos = yield* ConvexTodos
-    yield* todos.create(text)
+    const convex = yield* ConvexClient
+    yield* Effect.tryPromise({
+      try: () => convex.mutation(api.todos.create, { text }),
+      catch: errorMessage,
+    })
     return CreatedTodo()
   }).pipe(
     Effect.catch(error => Effect.succeed(FailedCreateTodo({ error }))),
+  ),
+)
+
+export const DeleteTodo = Command.define(
+  'DeleteTodo',
+  { id: S.String },
+  DeletedTodo,
+  FailedDeleteTodo,
+)(({ id }) =>
+  Effect.gen(function* () {
+    const convex = yield* ConvexClient
+    yield* Effect.tryPromise({
+      try: () => convex.mutation(api.todos.deleteTodo, { id }),
+      catch: errorMessage,
+    })
+    return DeletedTodo()
+  }).pipe(
+    Effect.catch(error => Effect.succeed(FailedDeleteTodo({ error }))),
   ),
 )
 
@@ -144,22 +188,48 @@ export const CreateTodo = Command.define(
 export const subscriptions = Subscription.make<
   Model,
   Message,
-  ConvexTodos
+  ConvexClient
 >()(entry => ({
   todos: entry(
     {},
     {
       modelToDependencies: () => ({}),
       dependenciesToStream: () =>
-        Stream.fromEffect(ConvexTodos).pipe(
-          Stream.flatMap(todos => todos.subscribe),
-          Stream.map(event =>
-            M.value(event).pipe(
-              M.tagsExhaustive({
-                LoadedTodos: ({ todos }) =>
-                  LoadedTodos({ todos: Array.map(todos, todo => todo) }),
-                FailedLoadTodos: ({ error }) => FailedLoadTodos({ error }),
-              }),
+        Stream.fromEffect(ConvexClient).pipe(
+          Stream.flatMap(convex =>
+            Stream.callback<Message>(queue =>
+              Effect.acquireRelease(
+                Effect.sync(() =>
+                  convex.onUpdate(
+                    api.todos.list,
+                    {},
+                    todos => {
+                      void Effect.runPromise(
+                        Queue.offer(
+                          queue,
+                          LoadedTodos({
+                            // Confect validates api.todos.list against
+                            // Schema.Array(todosTable.Doc) on the backend.
+                            // Convex's frontend FunctionReturnType currently
+                            // resolves to unknown for Confect registered
+                            // functions, so this cast bridges that type gap.
+                            todos: todos as ReadonlyArray<Todo>,
+                          }),
+                        ).pipe(Effect.catch(() => Effect.void)),
+                      )
+                    },
+                    error => {
+                      void Effect.runPromise(
+                        Queue.offer(
+                          queue,
+                          FailedLoadTodos({ error: errorMessage(error) }),
+                        ).pipe(Effect.catch(() => Effect.void)),
+                      )
+                    },
+                  ),
+                ),
+                unsubscribe => Effect.sync(() => unsubscribe()),
+              ),
             ),
           ),
         ),
@@ -194,9 +264,27 @@ const todoItemView = (todo: Todo): Html => {
   const h = html<Message>()
 
   return h.keyed('li')(
-    todo.id,
+    todo._id,
     [h.Class('rounded-lg border border-gray-200 bg-white px-4 py-3')],
-    [h.div([h.Class('text-gray-900')], [todo.text])],
+    [
+      h.div(
+        [h.Class('flex items-center justify-between gap-3')],
+        [
+          h.div([h.Class('min-w-0 flex-1 text-gray-900')], [todo.text]),
+          h.button(
+            [
+              h.Type('button'),
+              h.AriaLabel(`Delete ${todo.text}`),
+              h.Class(
+                'shrink-0 rounded border border-red-200 px-2 py-1 text-sm text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500',
+              ),
+              h.OnClick(ClickedDeleteTodo({ id: todo._id })),
+            ],
+            ['Delete'],
+          ),
+        ],
+      ),
+    ],
   )
 }
 

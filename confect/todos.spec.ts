@@ -18,4 +18,11 @@ export default GroupSpec.make()
       args: () => Schema.Struct({ text: Schema.String }),
       returns: () => Id("todos"),
     }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: "deleteTodo",
+      args: () => Schema.Struct({ id: Id("todos") }),
+      returns: () => Schema.Null,
+    }),
   );

@@ -2,7 +2,15 @@ import { Option } from 'effect'
 import { Scene } from 'foldkit'
 import { describe, test } from 'vitest'
 
-import { CreateTodo, CreatedTodo, type Model, update, view } from './main'
+import {
+  CreateTodo,
+  CreatedTodo,
+  DeleteTodo,
+  DeletedTodo,
+  type Model,
+  update,
+  view,
+} from './main'
 
 const emptyModel: Model = {
   todos: [],
@@ -11,12 +19,15 @@ const emptyModel: Model = {
   maybeError: Option.none(),
 }
 
+const todoId = (id: string): Model['todos'][number]['_id'] =>
+  id as Model['todos'][number]['_id']
+
 const modelWithTodos: Model = {
   ...emptyModel,
   loadState: 'Loaded',
   todos: [
-    { id: 'todo-1', text: 'Buy milk', createdAt: 1000 },
-    { id: 'todo-2', text: 'Walk the dog', createdAt: 2000 },
+    { _id: todoId('todo-1'), _creationTime: 1000, text: 'Buy milk' },
+    { _id: todoId('todo-2'), _creationTime: 2000, text: 'Walk the dog' },
   ],
 }
 
@@ -52,6 +63,16 @@ describe('scene', () => {
       Scene.Command.expectExact(CreateTodo),
       Scene.Command.resolve(CreateTodo, CreatedTodo()),
       Scene.expect(Scene.label('New todo')).toHaveValue(''),
+    )
+  })
+
+  test('clicking delete removes through the Convex command', () => {
+    Scene.scene(
+      { update, view },
+      Scene.with(modelWithTodos),
+      Scene.click(Scene.role('button', { name: 'Delete Buy milk' })),
+      Scene.Command.expectExact(DeleteTodo),
+      Scene.Command.resolve(DeleteTodo, DeletedTodo()),
     )
   })
 

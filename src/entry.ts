@@ -1,7 +1,6 @@
-import { Layer } from 'effect'
 import { Runtime } from 'foldkit'
 
-import { ConvexTodos, makeConvexTodos } from './convexTodos'
+import { ConvexClient, makeConvexClientLayer } from './convexClient'
 import { Flags, Message, Model, flags, init, subscriptions, update, view } from './main'
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL
@@ -14,7 +13,7 @@ const program = Runtime.makeProgram<
   Model,
   Message,
   Flags,
-  ConvexTodos
+  ConvexClient
 >({
   Model,
   Flags,
@@ -24,7 +23,7 @@ const program = Runtime.makeProgram<
   view,
   subscriptions,
   container: document.getElementById('root'),
-  resources: Layer.succeed(ConvexTodos)(makeConvexTodos(convexUrl)),
+  resources: makeConvexClientLayer(convexUrl),
   devTools: {
     Message,
   },

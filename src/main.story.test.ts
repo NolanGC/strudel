@@ -4,8 +4,12 @@ import { describe, expect, test } from 'vitest'
 
 import {
   AddedTodo,
+  ClickedDeleteTodo,
   CreateTodo,
   CreatedTodo,
+  DeleteTodo,
+  DeletedTodo,
+  FailedDeleteTodo,
   FailedCreateTodo,
   FailedLoadTodos,
   LoadedTodos,
@@ -61,8 +65,8 @@ describe('update', () => {
 
   test('LoadedTodos replaces todos from the subscription', () => {
     const todos = [
-      { id: 'todo-1', text: 'Buy milk', createdAt: 1000 },
-      { id: 'todo-2', text: 'Walk', createdAt: 2000 },
+      { _id: 'todo-1', _creationTime: 1000, text: 'Buy milk' },
+      { _id: 'todo-2', _creationTime: 2000, text: 'Walk' },
     ]
 
     Story.story(
@@ -72,6 +76,19 @@ describe('update', () => {
       Story.model(model => {
         expect(model.todos).toStrictEqual(todos)
         expect(model.loadState).toBe('Loaded')
+        expect(model.maybeError).toStrictEqual(Option.none())
+      }),
+    )
+  })
+
+  test('ClickedDeleteTodo deletes through Convex', () => {
+    Story.story(
+      update,
+      Story.with(emptyModel),
+      Story.message(ClickedDeleteTodo({ id: 'todo-1' })),
+      Story.Command.expectHas(DeleteTodo),
+      Story.Command.resolve(DeleteTodo, DeletedTodo()),
+      Story.model(model => {
         expect(model.maybeError).toStrictEqual(Option.none())
       }),
     )
@@ -91,6 +108,10 @@ describe('update', () => {
       Story.message(FailedCreateTodo({ error: 'Create failed' })),
       Story.model(model => {
         expect(model.maybeError).toStrictEqual(Option.some('Create failed'))
+      }),
+      Story.message(FailedDeleteTodo({ error: 'Delete failed' })),
+      Story.model(model => {
+        expect(model.maybeError).toStrictEqual(Option.some('Delete failed'))
       }),
     )
   })

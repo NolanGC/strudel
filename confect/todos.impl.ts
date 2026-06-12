@@ -24,8 +24,22 @@ const create = FunctionImpl.make(databaseSchema, notes, "create", ({ text }) =>
   }).pipe(Effect.orDie),
 );
 
+const deleteTodo = FunctionImpl.make(
+  databaseSchema,
+  notes,
+  "deleteTodo",
+  ({ id }) =>
+    Effect.gen(function* () {
+      const writer = yield* DatabaseWriter;
+
+      yield* writer.table("todos").delete(id);
+      return null;
+    }).pipe(Effect.orDie),
+);
+
 export default GroupImpl.make(databaseSchema, notes).pipe(
   Layer.provide(list),
   Layer.provide(create),
+  Layer.provide(deleteTodo),
   GroupImpl.finalize,
 );
