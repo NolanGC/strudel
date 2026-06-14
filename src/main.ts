@@ -1,24 +1,12 @@
-import { Array, Effect, Match as M, Option, Queue, Schema as S, Stream, String } from 'effect'
+import { Array, Effect, Match as M, Option, Schema as S, Stream, String } from 'effect'
 import { Command, Runtime, Subscription } from 'foldkit'
 import { Document, Html, html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { evo } from 'foldkit/struct'
 
-import todosTable from '../confect/_generated/tables/todos'
-import { api } from '../convex/_generated/api'
-import { confectTableFieldsToFoldkitDocSchema } from './confectSchemaCompat'
-import { ConvexClient } from './convexClient'
+import { Todo, TodoId, TodosBackend } from './todosBackend'
 
 // MODEL
-
-const Todo = confectTableFieldsToFoldkitDocSchema(
-  todosTable.tableName,
-  todosTable.Fields,
-)
-type Todo = typeof Todo.Type
-
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : globalThis.String(error)
 
 const LoadState = S.Literals(['Loading', 'Loaded', 'Failed'])
 type LoadState = typeof LoadState.Type
@@ -37,7 +25,7 @@ export const UpdatedNewTodo = m('UpdatedNewTodo', { text: S.String })
 export const AddedTodo = m('AddedTodo')
 export const CreatedTodo = m('CreatedTodo')
 export const FailedCreateTodo = m('FailedCreateTodo', { error: S.String })
-export const ClickedDeleteTodo = m('ClickedDeleteTodo', { id: S.String })
+export const ClickedDeleteTodo = m('ClickedDeleteTodo', { id: TodoId })
 export const DeletedTodo = m('DeletedTodo')
 export const FailedDeleteTodo = m('FailedDeleteTodo', { error: S.String })
 export const LoadedTodos = m('LoadedTodos', { todos: S.Array(Todo) })
@@ -77,7 +65,7 @@ export const init: Runtime.ProgramInit<Model, Message, Flags> = () => [
 
 type UpdateReturn = readonly [
   Model,
-  ReadonlyArray<Command.Command<Message, never, ConvexClient>>,
+  ReadonlyArray<Command.Command<Message, never, TodosBackend>>,
 ]
 
 const withUpdateReturn = M.withReturnType<UpdateReturn>()
@@ -154,32 +142,30 @@ export const CreateTodo = Command.define(
   FailedCreateTodo,
 )(({ text }) =>
   Effect.gen(function* () {
-    const convex = yield* ConvexClient
-    yield* Effect.tryPromise({
-      try: () => convex.mutation(api.todos.create, { text }),
-      catch: errorMessage,
-    })
+    const backend = yield* TodosBackend
+    yield* backend.create(text)
     return CreatedTodo()
   }).pipe(
-    Effect.catch(error => Effect.succeed(FailedCreateTodo({ error }))),
+    Effect.catch(error =>
+      Effect.succeed(FailedCreateTodo({ error: error.message })),
+    ),
   ),
 )
 
 export const DeleteTodo = Command.define(
   'DeleteTodo',
-  { id: S.String },
+  { id: TodoId },
   DeletedTodo,
   FailedDeleteTodo,
 )(({ id }) =>
   Effect.gen(function* () {
-    const convex = yield* ConvexClient
-    yield* Effect.tryPromise({
-      try: () => convex.mutation(api.todos.deleteTodo, { id }),
-      catch: errorMessage,
-    })
+    const backend = yield* TodosBackend
+    yield* backend.delete(id)
     return DeletedTodo()
   }).pipe(
-    Effect.catch(error => Effect.succeed(FailedDeleteTodo({ error }))),
+    Effect.catch(error =>
+      Effect.succeed(FailedDeleteTodo({ error: error.message })),
+    ),
   ),
 )
 
@@ -188,47 +174,21 @@ export const DeleteTodo = Command.define(
 export const subscriptions = Subscription.make<
   Model,
   Message,
-  ConvexClient
+  TodosBackend
 >()(entry => ({
   todos: entry(
     {},
     {
       modelToDependencies: () => ({}),
       dependenciesToStream: () =>
-        Stream.fromEffect(ConvexClient).pipe(
-          Stream.flatMap(convex =>
-            Stream.callback<Message>(queue =>
-              Effect.acquireRelease(
-                Effect.sync(() =>
-                  convex.onUpdate(
-                    api.todos.list,
-                    {},
-                    todos => {
-                      void Effect.runPromise(
-                        Queue.offer(
-                          queue,
-                          LoadedTodos({
-                            // Confect validates api.todos.list against
-                            // Schema.Array(todosTable.Doc) on the backend.
-                            // Convex's frontend FunctionReturnType currently
-                            // resolves to unknown for Confect registered
-                            // functions, so this cast bridges that type gap.
-                            todos: todos as ReadonlyArray<Todo>,
-                          }),
-                        ).pipe(Effect.catch(() => Effect.void)),
-                      )
-                    },
-                    error => {
-                      void Effect.runPromise(
-                        Queue.offer(
-                          queue,
-                          FailedLoadTodos({ error: errorMessage(error) }),
-                        ).pipe(Effect.catch(() => Effect.void)),
-                      )
-                    },
-                  ),
+        Stream.fromEffect(TodosBackend).pipe(
+          Stream.flatMap(backend =>
+            backend.todos.pipe(
+              Stream.map(todos => LoadedTodos({ todos })),
+              Stream.catch(error =>
+                Stream.succeed(
+                  FailedLoadTodos({ error: error.message }),
                 ),
-                unsubscribe => Effect.sync(() => unsubscribe()),
               ),
             ),
           ),

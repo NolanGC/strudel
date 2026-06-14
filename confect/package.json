@@ -7,12 +7,10 @@
     "codegen": "confect codegen"
   },
   "dependencies": {
-    "@confect/cli": "^9.0.1",
-    "@confect/core": "^9.0.1",
-    "@confect/server": "^9.0.1",
-    "@effect/platform": "^0.96.1",
-    "@effect/platform-node": "^0.106.0",
+    "@confect/cli": "file:../repos/confect-effect4/.packs/confect-cli-7.0.0.tgz",
+    "@confect/core": "file:../repos/confect-effect4/.packs/confect-core-7.0.0.tgz",
+    "@confect/server": "file:../repos/confect-effect4/.packs/confect-server-7.0.0.tgz",
     "convex": "^1.41.0",
-    "effect": "^3.21.2"
+    "effect": "4.0.0-beta.78"
   }
 }

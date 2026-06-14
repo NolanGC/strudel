@@ -1,0 +1,42 @@
+# Confect 🧁
+
+## Docs
+
+- [HTTP](https://confect.dev/clients/js/http.md): Call your Confect functions over HTTP from any JavaScript runtime.
+- [WebSocket](https://confect.dev/clients/js/websocket.md): Call your Confect functions and subscribe to reactive queries over a persistent WebSocket connection.
+- [React](https://confect.dev/clients/react.md): Use Confect's React hooks to call your functions from the client.
+- [File Naming Conventions](https://confect.dev/concepts/file-naming-conventions.md): Recommended patterns for organizing spec, impl, and related files in your confect directory.
+- [Packages](https://confect.dev/concepts/packages.md): Understand the packages that make up the Confect ecosystem.
+- [Project Structure](https://confect.dev/concepts/project-structure.md): Understand the structure of a Confect project.
+- [Schema Restrictions](https://confect.dev/concepts/schema-restrictions.md): Understand the restrictions on Effect schemas that can be used in Confect.
+- [Services](https://confect.dev/concepts/services.md): Understand which Effect services Confect provides.
+- [The Spec/Impl Model](https://confect.dev/concepts/spec-impl-model.md): Understand how Confect separates function interfaces from their implementations.
+- [Introduction](https://confect.dev/getting-started/introduction.md): Confect deeply integrates Effect with Convex for end-to-end type-safe full-stack apps.
+- [Quickstart](https://confect.dev/getting-started/quickstart.md): Install Confect and build a type-safe Convex app with Effect schemas in minutes.
+- [Testing](https://confect.dev/guides/testing.md): Test your Confect functions without a live Convex backend.
+- [Authentication](https://confect.dev/server/authentication.md): Access the current user's identity in your Confect functions.
+- [Components](https://confect.dev/server/components.md): Use Convex components in your Confect app.
+- [Cron Jobs](https://confect.dev/server/cron-jobs.md): Schedule recurring tasks with cron jobs.
+- [Determinism](https://confect.dev/server/database/determinism.md): How Confect keeps queries cacheable by default.
+- [Reading](https://confect.dev/server/database/reading.md): Retrieve documents from the database.
+- [Schema](https://confect.dev/server/database/schema.md): Define your database schema using Effect schemas.
+- [System Tables](https://confect.dev/server/database/system-tables.md): Query system tables using the same API as regular tables.
+- [Writing](https://confect.dev/server/database/writing.md): Insert, modify, and delete documents in the database.
+- [Environment Variables](https://confect.dev/server/environment-variables.md): Read environment variables using Effect's Config module.
+- [Error Handling](https://confect.dev/server/error-handling.md): Declare typed errors on Confect functions and consume them at every call site.
+- [Functions](https://confect.dev/server/functions.md): Define and implement Convex queries, mutations, and actions with Confect.
+- [HTTP API](https://confect.dev/server/http-api.md): Define HTTP endpoints using Effect's HTTP API modules.
+- [Node Actions](https://confect.dev/server/node-actions.md): Define actions that run in the Node.js runtime.
+- [Plain Convex Functions](https://confect.dev/server/plain-convex-functions.md): Integrate plain Convex functions into your Confect spec and impl tree.
+- [Scheduling](https://confect.dev/server/scheduling.md): Schedule functions to run after a delay or at a specific time.
+- [Search](https://confect.dev/server/search.md): Query vector indexes for semantic similarity search.
+- [Storage](https://confect.dev/server/storage.md): Store and retrieve blobs using Convex file storage.
+
+## OpenAPI Specs
+
+- [openapi](https://confect.dev/api-reference/openapi.json)
+
+## Optional
+
+- [Effect Docs](https://effect.website/docs)
+- [Convex Docs](https://docs.convex.dev)

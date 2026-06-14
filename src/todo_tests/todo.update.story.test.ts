@@ -16,7 +16,7 @@ import {
   type Model,
   UpdatedNewTodo,
   update,
-} from './main'
+} from '../main'
 
 const emptyModel: Model = {
   todos: [],

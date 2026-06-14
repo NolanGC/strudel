@@ -1,7 +1,9 @@
+import { WebSocketClient } from '@confect/js'
+import { Layer } from 'effect'
 import { Runtime } from 'foldkit'
 
-import { ConvexClient, makeConvexClientLayer } from './convexClient'
 import { Flags, Message, Model, flags, init, subscriptions, update, view } from './main'
+import { TodosBackend, TodosBackendLive } from './todosBackend'
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL
 
@@ -13,7 +15,7 @@ const program = Runtime.makeProgram<
   Model,
   Message,
   Flags,
-  ConvexClient
+  TodosBackend
 >({
   Model,
   Flags,
@@ -23,7 +25,9 @@ const program = Runtime.makeProgram<
   view,
   subscriptions,
   container: document.getElementById('root'),
-  resources: makeConvexClientLayer(convexUrl),
+  resources: TodosBackendLive.pipe(
+    Layer.provide(WebSocketClient.layer(convexUrl)),
+  ),
   devTools: {
     Message,
   },

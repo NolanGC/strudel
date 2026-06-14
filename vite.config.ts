@@ -4,6 +4,9 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [tailwindcss(), foldkit({ devToolsMcpPort: 9988 })],
+  resolve: {
+    dedupe: ['@confect/core', '@confect/js', 'effect'],
+  },
   optimizeDeps: {
     entries: ['src/entry.ts'],
   },

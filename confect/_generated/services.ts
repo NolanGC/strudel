@@ -5,6 +5,7 @@ import {
   type DataModel,
   DatabaseReader as DatabaseReader_,
   DatabaseWriter as DatabaseWriter_,
+  Meta as Meta_,
   MutationCtx as MutationCtx_,
   MutationRunner as MutationRunner_,
   QueryCtx as QueryCtx_,
@@ -15,7 +16,7 @@ import {
   StorageWriter as StorageWriter_,
   VectorSearch as VectorSearch_,
 } from "@confect/server";
-import type schemaDefinition from "./schema";
+import type schemaDefinition from "../schema";
 
 export const Auth = Auth_.Auth;
 export type Auth = typeof Auth.Identifier;
@@ -52,6 +53,15 @@ export type MutationRunner = typeof MutationRunner.Identifier;
 
 export const ActionRunner = ActionRunner_.ActionRunner;
 export type ActionRunner = typeof ActionRunner.Identifier;
+
+export const QueryMeta = Meta_.QueryMeta;
+export type QueryMeta = typeof QueryMeta.Identifier;
+
+export const MutationMeta = Meta_.MutationMeta;
+export type MutationMeta = typeof MutationMeta.Identifier;
+
+export const ActionMeta = Meta_.ActionMeta;
+export type ActionMeta = typeof ActionMeta.Identifier;
 
 export const QueryCtx =
   QueryCtx_.QueryCtx<

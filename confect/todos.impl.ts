@@ -1,11 +1,10 @@
 import { FunctionImpl, GroupImpl } from "@confect/server";
 import { Effect, Layer } from "effect";
 
-import databaseSchema from "./_generated/schema";
+import api from "./_generated/api";
 import { DatabaseReader, DatabaseWriter } from "./_generated/services";
-import notes from "./todos.spec";
 
-const list = FunctionImpl.make(databaseSchema, notes, "list", () =>
+const list = FunctionImpl.make(api, "todos", "list", () =>
   Effect.gen(function* () {
     const reader = yield* DatabaseReader;
 
@@ -16,7 +15,7 @@ const list = FunctionImpl.make(databaseSchema, notes, "list", () =>
   }).pipe(Effect.orDie),
 );
 
-const create = FunctionImpl.make(databaseSchema, notes, "create", ({ text }) =>
+const create = FunctionImpl.make(api, "todos", "create", ({ text }) =>
   Effect.gen(function* () {
     const writer = yield* DatabaseWriter;
 
@@ -25,8 +24,8 @@ const create = FunctionImpl.make(databaseSchema, notes, "create", ({ text }) =>
 );
 
 const deleteTodo = FunctionImpl.make(
-  databaseSchema,
-  notes,
+  api,
+  "todos",
   "deleteTodo",
   ({ id }) =>
     Effect.gen(function* () {
@@ -37,9 +36,8 @@ const deleteTodo = FunctionImpl.make(
     }).pipe(Effect.orDie),
 );
 
-export default GroupImpl.make(databaseSchema, notes).pipe(
+export const todos = GroupImpl.make(api, "todos").pipe(
   Layer.provide(list),
   Layer.provide(create),
   Layer.provide(deleteTodo),
-  GroupImpl.finalize,
 );

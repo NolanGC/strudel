@@ -7,10 +7,12 @@ import {
   CreatedTodo,
   DeleteTodo,
   DeletedTodo,
+  FailedCreateTodo,
+  FailedDeleteTodo,
   type Model,
   update,
   view,
-} from './main'
+} from '../main'
 
 const emptyModel: Model = {
   todos: [],
@@ -89,6 +91,35 @@ describe('scene', () => {
       }),
       Scene.expect(Scene.role('status')).toContainText('Could not load todos'),
       Scene.expect(Scene.text('Convex unavailable')).toExist(),
+    )
+  })
+
+  test('shows create errors after submit failure', () => {
+    Scene.scene(
+      { update, view },
+      Scene.with(emptyModel),
+      Scene.type(Scene.label('New todo'), 'Write tests'),
+      Scene.submit(Scene.selector('form')),
+      Scene.Command.expectExact(CreateTodo),
+      Scene.Command.resolve(
+        CreateTodo,
+        FailedCreateTodo({ error: 'Create unavailable' }),
+      ),
+      Scene.expect(Scene.text('Create unavailable')).toExist(),
+    )
+  })
+
+  test('shows delete errors after delete failure', () => {
+    Scene.scene(
+      { update, view },
+      Scene.with(modelWithTodos),
+      Scene.click(Scene.role('button', { name: 'Delete Buy milk' })),
+      Scene.Command.expectExact(DeleteTodo),
+      Scene.Command.resolve(
+        DeleteTodo,
+        FailedDeleteTodo({ error: 'Delete unavailable' }),
+      ),
+      Scene.expect(Scene.text('Delete unavailable')).toExist(),
     )
   })
 })
