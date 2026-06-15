@@ -1,9 +1,10 @@
-import { Table } from "@confect/server";
-import { Schema } from "effect";
+import { Table } from '@confect/server'
+import { Schema } from 'effect'
 
 export const Todos = Table.make(
-  "todos",
+  'todos',
   Schema.Struct({
+    ownerUserId: Schema.String,
     text: Schema.String,
   }),
-);
+).index('by_ownerUserId', ['ownerUserId'])

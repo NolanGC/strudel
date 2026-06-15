@@ -1,7 +1,8 @@
-import { Option } from 'effect'
+import { Option, Schema as S } from 'effect'
 import { Scene } from 'foldkit'
-import { describe, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 
+import { AuthSignedIn } from '../authService'
 import {
   CreateTodo,
   CreatedTodo,
@@ -9,27 +10,43 @@ import {
   DeletedTodo,
   FailedCreateTodo,
   FailedDeleteTodo,
-  type Model,
+  Model,
   update,
   view,
 } from '../main'
+import { TodosRoute } from '../route'
+import { TodoId } from '../todosBackend'
+import { errorMessage } from '../userFacingError'
 
 const emptyModel: Model = {
+  route: TodosRoute(),
+  authState: AuthSignedIn({ session: { displayName: 'Nolan' } }),
+  magicLinkEmail: '',
   todos: [],
   newTodoText: '',
   loadState: 'Loading',
+  maybeNotice: Option.none(),
   maybeError: Option.none(),
 }
 
-const todoId = (id: string): Model['todos'][number]['_id'] =>
-  id as Model['todos'][number]['_id']
+const todoId = S.decodeUnknownSync(TodoId)
 
 const modelWithTodos: Model = {
   ...emptyModel,
   loadState: 'Loaded',
   todos: [
-    { _id: todoId('todo-1'), _creationTime: 1000, text: 'Buy milk' },
-    { _id: todoId('todo-2'), _creationTime: 2000, text: 'Walk the dog' },
+    {
+      _id: todoId('todo-1'),
+      _creationTime: 1000,
+      ownerUserId: 'user-1',
+      text: 'Buy milk',
+    },
+    {
+      _id: todoId('todo-2'),
+      _creationTime: 2000,
+      ownerUserId: 'user-1',
+      text: 'Walk the dog',
+    },
   ],
 }
 
@@ -87,11 +104,21 @@ describe('scene', () => {
       Scene.with({
         ...emptyModel,
         loadState: 'Failed',
-        maybeError: Option.some('Convex unavailable'),
+        maybeError: Option.some(errorMessage('Convex unavailable')),
       }),
       Scene.expect(Scene.role('status')).toContainText('Could not load todos'),
       Scene.expect(Scene.text('Convex unavailable')).toExist(),
     )
+  })
+
+  test('rejects empty error text in the model schema', () => {
+    expect(
+      S.decodeUnknownOption(Model)({
+        ...emptyModel,
+        loadState: 'Failed',
+        maybeError: Option.some(''),
+      }),
+    ).toStrictEqual(Option.none())
   })
 
   test('shows create errors after submit failure', () => {
@@ -103,7 +130,7 @@ describe('scene', () => {
       Scene.Command.expectExact(CreateTodo),
       Scene.Command.resolve(
         CreateTodo,
-        FailedCreateTodo({ error: 'Create unavailable' }),
+        FailedCreateTodo({ error: errorMessage('Create unavailable') }),
       ),
       Scene.expect(Scene.text('Create unavailable')).toExist(),
     )
@@ -117,7 +144,7 @@ describe('scene', () => {
       Scene.Command.expectExact(DeleteTodo),
       Scene.Command.resolve(
         DeleteTodo,
-        FailedDeleteTodo({ error: 'Delete unavailable' }),
+        FailedDeleteTodo({ error: errorMessage('Delete unavailable') }),
       ),
       Scene.expect(Scene.text('Delete unavailable')).toExist(),
     )

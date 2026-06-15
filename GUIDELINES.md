@@ -58,18 +58,18 @@ For todos, the source starts here:
 
 ```ts
 export const Todos = Table.make(
-  "todos",
+  'todos',
   Schema.Struct({
     text: Schema.String,
   }),
-);
+)
 ```
 
 Function specs then refer to that table schema:
 
 ```ts
 FunctionSpec.publicQuery({
-  name: "list",
+  name: 'list',
   args: Schema.Struct({}),
   returns: Schema.Array(Todos.Doc),
 })
@@ -190,7 +190,7 @@ Todo example:
 
 ```ts
 FunctionSpec.publicQuery({
-  name: "list",
+  name: 'list',
   args: Schema.Struct({}),
   returns: Schema.Array(Todos.Doc),
 })
@@ -218,9 +218,9 @@ In this stack, prefer Confect mutation specs for app-owned writes:
 
 ```ts
 FunctionSpec.publicMutation({
-  name: "create",
+  name: 'create',
   args: Schema.Struct({ text: Schema.String }),
-  returns: GenericId.GenericId("todos"),
+  returns: GenericId.GenericId('todos'),
 })
 ```
 
@@ -366,7 +366,9 @@ Convex auth rules for this repo:
 
 - Add `convex/auth.config.ts` when auth is used.
 - Use `ctx.auth.getUserIdentity()` server-side.
-- Prefer `identity.tokenIdentifier` as the stable auth key.
+- For Convex Auth, prefer the stable auth user id from `getAuthUserId(ctx)` or
+  the user id portion of `identity.subject`; `identity.tokenIdentifier` can
+  include session identity.
 - Never accept `userId` from the client for authorization.
 - Enforce ownership and tenant boundaries in every protected query/mutation.
 
@@ -468,12 +470,8 @@ The current app service is:
 ```ts
 type TodosBackendShape = {
   readonly todos: Stream.Stream<ReadonlyArray<Todo>, TodosBackendError>
-  readonly create: (
-    text: string,
-  ) => Effect.Effect<TodoId, TodosBackendError>
-  readonly delete: (
-    id: TodoId,
-  ) => Effect.Effect<null, TodosBackendError>
+  readonly create: (text: string) => Effect.Effect<TodoId, TodosBackendError>
+  readonly delete: (id: TodoId) => Effect.Effect<null, TodosBackendError>
 }
 ```
 
@@ -561,29 +559,27 @@ Use Foldkit `Subscription` for realtime external input.
 For todo data:
 
 ```ts
-export const subscriptions = Subscription.make<
-  Model,
-  Message,
-  TodosBackend
->()(entry => ({
-  todos: entry(
-    {},
-    {
-      modelToDependencies: () => ({}),
-      dependenciesToStream: () =>
-        Stream.fromEffect(TodosBackend).pipe(
-          Stream.flatMap(backend =>
-            backend.todos.pipe(
-              Stream.map(todos => LoadedTodos({ todos })),
-              Stream.catch(error =>
-                Stream.succeed(FailedLoadTodos({ error: error.message })),
+export const subscriptions = Subscription.make<Model, Message, TodosBackend>()(
+  entry => ({
+    todos: entry(
+      {},
+      {
+        modelToDependencies: () => ({}),
+        dependenciesToStream: () =>
+          Stream.fromEffect(TodosBackend).pipe(
+            Stream.flatMap(backend =>
+              backend.todos.pipe(
+                Stream.map(todos => LoadedTodos({ todos })),
+                Stream.catch(error =>
+                  Stream.succeed(FailedLoadTodos({ error: error.message })),
+                ),
               ),
             ),
           ),
-        ),
-    },
-  ),
-}))
+      },
+    ),
+  }),
+)
 ```
 
 This keeps continuous backend updates outside `update`. The subscription emits
@@ -638,9 +634,7 @@ Errors should remain typed as long as possible.
 The backend service defines:
 
 ```ts
-export class TodosBackendError extends Data.TaggedError(
-  'TodosBackendError',
-)<{
+export class TodosBackendError extends Data.TaggedError('TodosBackendError')<{
   readonly operation: BackendOperation
   readonly message: string
   readonly cause: unknown

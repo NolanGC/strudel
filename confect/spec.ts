@@ -1,5 +1,6 @@
-import { Spec } from "@confect/core";
+import { Spec } from '@confect/core'
 
-import { todos } from "./todos.spec";
+import { auth } from './auth.spec'
+import { todos } from './todos.spec'
 
-export default Spec.make().add(todos);
+export default Spec.make().add(auth).add(todos)

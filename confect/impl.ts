@@ -1,10 +1,12 @@
-import { Impl } from "@confect/server";
-import { Layer } from "effect";
+import { Impl } from '@confect/server'
+import { Layer } from 'effect'
 
-import api from "./_generated/api";
-import { todos } from "./todos.impl";
+import api from './_generated/api'
+import { auth } from './auth.impl'
+import { todos } from './todos.impl'
 
 export default Impl.make(api).pipe(
+  Layer.provide(auth),
   Layer.provide(todos),
   Impl.finalize,
-);
+)

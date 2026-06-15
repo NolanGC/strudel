@@ -2,6 +2,7 @@ import { Option } from 'effect'
 import { Story } from 'foldkit'
 import { describe, expect, test } from 'vitest'
 
+import { AuthSignedIn } from '../authService'
 import {
   AddedTodo,
   ClickedDeleteTodo,
@@ -9,19 +10,25 @@ import {
   CreatedTodo,
   DeleteTodo,
   DeletedTodo,
-  FailedDeleteTodo,
   FailedCreateTodo,
+  FailedDeleteTodo,
   FailedLoadTodos,
   LoadedTodos,
   type Model,
   UpdatedNewTodo,
   update,
 } from '../main'
+import { TodosRoute } from '../route'
+import { errorMessage } from '../userFacingError'
 
 const emptyModel: Model = {
+  route: TodosRoute(),
+  authState: AuthSignedIn({ session: { displayName: 'Nolan' } }),
+  magicLinkEmail: '',
   todos: [],
   newTodoText: '',
   loadState: 'Loading',
+  maybeNotice: Option.none(),
   maybeError: Option.none(),
 }
 
@@ -65,8 +72,18 @@ describe('update', () => {
 
   test('LoadedTodos replaces todos from the subscription', () => {
     const todos = [
-      { _id: 'todo-1', _creationTime: 1000, text: 'Buy milk' },
-      { _id: 'todo-2', _creationTime: 2000, text: 'Walk' },
+      {
+        _id: 'todo-1',
+        _creationTime: 1000,
+        ownerUserId: 'user-1',
+        text: 'Buy milk',
+      },
+      {
+        _id: 'todo-2',
+        _creationTime: 2000,
+        ownerUserId: 'user-1',
+        text: 'Walk',
+      },
     ]
 
     Story.story(
@@ -98,20 +115,26 @@ describe('update', () => {
     Story.story(
       update,
       Story.with(emptyModel),
-      Story.message(FailedLoadTodos({ error: 'Convex unavailable' })),
+      Story.message(
+        FailedLoadTodos({ error: errorMessage('Convex unavailable') }),
+      ),
       Story.model(model => {
         expect(model.loadState).toBe('Failed')
         expect(model.maybeError).toStrictEqual(
-          Option.some('Convex unavailable'),
+          Option.some(errorMessage('Convex unavailable')),
         )
       }),
-      Story.message(FailedCreateTodo({ error: 'Create failed' })),
+      Story.message(FailedCreateTodo({ error: errorMessage('Create failed') })),
       Story.model(model => {
-        expect(model.maybeError).toStrictEqual(Option.some('Create failed'))
+        expect(model.maybeError).toStrictEqual(
+          Option.some(errorMessage('Create failed')),
+        )
       }),
-      Story.message(FailedDeleteTodo({ error: 'Delete failed' })),
+      Story.message(FailedDeleteTodo({ error: errorMessage('Delete failed') })),
       Story.model(model => {
-        expect(model.maybeError).toStrictEqual(Option.some('Delete failed'))
+        expect(model.maybeError).toStrictEqual(
+          Option.some(errorMessage('Delete failed')),
+        )
       }),
     )
   })

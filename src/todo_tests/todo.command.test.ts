@@ -1,4 +1,4 @@
-import { Effect, Stream } from 'effect'
+import { Effect, Schema as S, Stream } from 'effect'
 import { describe, expect, test } from 'vitest'
 
 import {
@@ -10,12 +10,13 @@ import {
   FailedDeleteTodo,
 } from '../main'
 import {
-  type TodoId,
+  TodoId,
   TodosBackendError,
   makeTodosBackendTestLayer,
 } from '../todosBackend'
+import { errorMessage } from '../userFacingError'
 
-const todoId = (id: string): TodoId => id as TodoId
+const todoId = S.decodeUnknownSync(TodoId)
 
 describe('todo backend commands', () => {
   test('CreateTodo succeeds through the TodosBackend service', async () => {
@@ -27,7 +28,7 @@ describe('todo backend commands', () => {
           : Effect.fail(
               new TodosBackendError({
                 operation: 'CreateTodo',
-                message: 'Unexpected text',
+                message: errorMessage('Unexpected text'),
                 cause: text,
               }),
             ),
@@ -49,7 +50,7 @@ describe('todo backend commands', () => {
         Effect.fail(
           new TodosBackendError({
             operation: 'CreateTodo',
-            message: 'Create unavailable',
+            message: errorMessage('Create unavailable'),
             cause: 'offline',
           }),
         ),
@@ -62,7 +63,7 @@ describe('todo backend commands', () => {
     )
 
     expect(message).toStrictEqual(
-      FailedCreateTodo({ error: 'Create unavailable' }),
+      FailedCreateTodo({ error: errorMessage('Create unavailable') }),
     )
   })
 
@@ -76,7 +77,7 @@ describe('todo backend commands', () => {
           : Effect.fail(
               new TodosBackendError({
                 operation: 'DeleteTodo',
-                message: 'Unexpected id',
+                message: errorMessage('Unexpected id'),
                 cause: id,
               }),
             ),
@@ -98,7 +99,7 @@ describe('todo backend commands', () => {
         Effect.fail(
           new TodosBackendError({
             operation: 'DeleteTodo',
-            message: 'Delete unavailable',
+            message: errorMessage('Delete unavailable'),
             cause: 'offline',
           }),
         ),
@@ -110,7 +111,7 @@ describe('todo backend commands', () => {
     )
 
     expect(message).toStrictEqual(
-      FailedDeleteTodo({ error: 'Delete unavailable' }),
+      FailedDeleteTodo({ error: errorMessage('Delete unavailable') }),
     )
   })
 })
