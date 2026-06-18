@@ -3,6 +3,7 @@ import { Story } from 'foldkit'
 import { describe, expect, test } from 'vitest'
 
 import { AuthSignedIn } from '../authService'
+import * as AuthPanel from '../authPanel'
 import {
   AddedTodo,
   ClickedDeleteTodo,
@@ -13,22 +14,21 @@ import {
   FailedCreateTodo,
   FailedDeleteTodo,
   FailedLoadTodos,
+  GotTodosPageMessage,
   LoadedTodos,
   type Model,
   UpdatedNewTodo,
   update,
 } from '../main'
 import { TodosRoute } from '../route'
-import { errorMessage } from '../userFacingError'
+import * as TodosPage from '../todosPage'
+import { errorMessage } from '../errorMessage'
 
 const emptyModel: Model = {
   route: TodosRoute(),
   authState: AuthSignedIn({ session: { displayName: 'Nolan' } }),
-  magicLinkEmail: '',
-  todos: [],
-  newTodoText: '',
-  loadState: 'Loading',
-  maybeNotice: Option.none(),
+  authPanel: AuthPanel.init(),
+  todosPage: TodosPage.init(),
   maybeError: Option.none(),
 }
 
@@ -37,9 +37,11 @@ describe('update', () => {
     Story.story(
       update,
       Story.with(emptyModel),
-      Story.message(UpdatedNewTodo({ text: 'Buy milk' })),
+      Story.message(
+        GotTodosPageMessage({ message: UpdatedNewTodo({ text: 'Buy milk' }) }),
+      ),
       Story.model(model => {
-        expect(model.newTodoText).toBe('Buy milk')
+        expect(model.todosPage.newTodoText).toBe('Buy milk')
       }),
     )
   })
@@ -47,13 +49,23 @@ describe('update', () => {
   test('AddedTodo trims text and creates a Convex todo', () => {
     Story.story(
       update,
-      Story.with({ ...emptyModel, newTodoText: '  Buy milk  ' }),
-      Story.message(AddedTodo()),
+      Story.with({
+        ...emptyModel,
+        todosPage: {
+          ...emptyModel.todosPage,
+          newTodoText: '  Buy milk  ',
+        },
+      }),
+      Story.message(GotTodosPageMessage({ message: AddedTodo() })),
       Story.Command.expectHas(CreateTodo),
-      Story.Command.resolve(CreateTodo, CreatedTodo()),
+      Story.Command.resolve(
+        CreateTodo,
+        CreatedTodo(),
+        message => GotTodosPageMessage({ message }),
+      ),
       Story.model(model => {
-        expect(model.newTodoText).toBe('')
-        expect(model.maybeError).toStrictEqual(Option.none())
+        expect(model.todosPage.newTodoText).toBe('')
+        expect(model.todosPage.maybeError).toStrictEqual(Option.none())
       }),
     )
   })
@@ -61,11 +73,14 @@ describe('update', () => {
   test('AddedTodo ignores empty text', () => {
     Story.story(
       update,
-      Story.with({ ...emptyModel, newTodoText: '   ' }),
-      Story.message(AddedTodo()),
+      Story.with({
+        ...emptyModel,
+        todosPage: { ...emptyModel.todosPage, newTodoText: '   ' },
+      }),
+      Story.message(GotTodosPageMessage({ message: AddedTodo() })),
       Story.Command.expectNone(),
       Story.model(model => {
-        expect(model.newTodoText).toBe('   ')
+        expect(model.todosPage.newTodoText).toBe('   ')
       }),
     )
   })
@@ -89,11 +104,11 @@ describe('update', () => {
     Story.story(
       update,
       Story.with(emptyModel),
-      Story.message(LoadedTodos({ todos })),
+      Story.message(GotTodosPageMessage({ message: LoadedTodos({ todos }) })),
       Story.model(model => {
-        expect(model.todos).toStrictEqual(todos)
-        expect(model.loadState).toBe('Loaded')
-        expect(model.maybeError).toStrictEqual(Option.none())
+        expect(model.todosPage.todos).toStrictEqual(todos)
+        expect(model.todosPage.loadState).toBe('Loaded')
+        expect(model.todosPage.maybeError).toStrictEqual(Option.none())
       }),
     )
   })
@@ -102,11 +117,17 @@ describe('update', () => {
     Story.story(
       update,
       Story.with(emptyModel),
-      Story.message(ClickedDeleteTodo({ id: 'todo-1' })),
+      Story.message(
+        GotTodosPageMessage({ message: ClickedDeleteTodo({ id: 'todo-1' }) }),
+      ),
       Story.Command.expectHas(DeleteTodo),
-      Story.Command.resolve(DeleteTodo, DeletedTodo()),
+      Story.Command.resolve(
+        DeleteTodo,
+        DeletedTodo(),
+        message => GotTodosPageMessage({ message }),
+      ),
       Story.model(model => {
-        expect(model.maybeError).toStrictEqual(Option.none())
+        expect(model.todosPage.maybeError).toStrictEqual(Option.none())
       }),
     )
   })
@@ -116,23 +137,35 @@ describe('update', () => {
       update,
       Story.with(emptyModel),
       Story.message(
-        FailedLoadTodos({ error: errorMessage('Convex unavailable') }),
+        GotTodosPageMessage({
+          message: FailedLoadTodos({
+            error: errorMessage('Convex unavailable'),
+          }),
+        }),
       ),
       Story.model(model => {
-        expect(model.loadState).toBe('Failed')
-        expect(model.maybeError).toStrictEqual(
+        expect(model.todosPage.loadState).toBe('Failed')
+        expect(model.todosPage.maybeError).toStrictEqual(
           Option.some(errorMessage('Convex unavailable')),
         )
       }),
-      Story.message(FailedCreateTodo({ error: errorMessage('Create failed') })),
+      Story.message(
+        GotTodosPageMessage({
+          message: FailedCreateTodo({ error: errorMessage('Create failed') }),
+        }),
+      ),
       Story.model(model => {
-        expect(model.maybeError).toStrictEqual(
+        expect(model.todosPage.maybeError).toStrictEqual(
           Option.some(errorMessage('Create failed')),
         )
       }),
-      Story.message(FailedDeleteTodo({ error: errorMessage('Delete failed') })),
+      Story.message(
+        GotTodosPageMessage({
+          message: FailedDeleteTodo({ error: errorMessage('Delete failed') }),
+        }),
+      ),
       Story.model(model => {
-        expect(model.maybeError).toStrictEqual(
+        expect(model.todosPage.maybeError).toStrictEqual(
           Option.some(errorMessage('Delete failed')),
         )
       }),

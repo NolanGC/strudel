@@ -1,4 +1,4 @@
-import { Effect, Schema as S, Stream } from 'effect'
+import { Effect, Option, Schema as S, Stream } from 'effect'
 import { describe, expect, test } from 'vitest'
 
 import {
@@ -14,7 +14,8 @@ import {
   TodosBackendError,
   makeTodosBackendTestLayer,
 } from '../todosBackend'
-import { errorMessage } from '../userFacingError'
+import { TodoStorageError } from '../../confect/todos.spec'
+import { errorMessage } from '../errorMessage'
 
 const todoId = S.decodeUnknownSync(TodoId)
 
@@ -29,10 +30,14 @@ describe('todo backend commands', () => {
               new TodosBackendError({
                 operation: 'CreateTodo',
                 message: errorMessage('Unexpected text'),
-                cause: text,
+                cause: new TodoStorageError({
+                  operation: 'CreateTodo',
+                  message: `Unexpected text: ${text}`,
+                  userMessage: 'Unexpected text',
+                }),
               }),
             ),
-      delete: () => Effect.succeed(null),
+      delete: () => Effect.succeed(Option.none()),
     })
 
     const message = await CreateTodo({ text: 'Write tests' }).effect.pipe(
@@ -51,10 +56,14 @@ describe('todo backend commands', () => {
           new TodosBackendError({
             operation: 'CreateTodo',
             message: errorMessage('Create unavailable'),
-            cause: 'offline',
+            cause: new TodoStorageError({
+              operation: 'CreateTodo',
+              message: 'offline',
+              userMessage: 'Create unavailable',
+            }),
           }),
         ),
-      delete: () => Effect.succeed(null),
+      delete: () => Effect.succeed(Option.none()),
     })
 
     const message = await CreateTodo({ text: 'Write tests' }).effect.pipe(
@@ -73,12 +82,16 @@ describe('todo backend commands', () => {
       create: () => Effect.succeed(todoId('todo-created')),
       delete: id =>
         id === todoId('todo-1')
-          ? Effect.succeed(null)
+          ? Effect.succeed(Option.some(id))
           : Effect.fail(
               new TodosBackendError({
                 operation: 'DeleteTodo',
                 message: errorMessage('Unexpected id'),
-                cause: id,
+                cause: new TodoStorageError({
+                  operation: 'DeleteTodo',
+                  message: `Unexpected id: ${id}`,
+                  userMessage: 'Unexpected id',
+                }),
               }),
             ),
     })
@@ -100,7 +113,11 @@ describe('todo backend commands', () => {
           new TodosBackendError({
             operation: 'DeleteTodo',
             message: errorMessage('Delete unavailable'),
-            cause: 'offline',
+            cause: new TodoStorageError({
+              operation: 'DeleteTodo',
+              message: 'offline',
+              userMessage: 'Delete unavailable',
+            }),
           }),
         ),
     })

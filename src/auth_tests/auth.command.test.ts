@@ -16,7 +16,7 @@ import {
   SucceededSignOut,
   SucceededStartedGitHubSignIn,
 } from '../main'
-import { errorMessage } from '../userFacingError'
+import { errorMessage } from '../errorMessage'
 
 const authLayer = makeAuthServiceTestLayer({
   authState: Stream.succeed(AuthSignedOut()),

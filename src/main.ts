@@ -1,12 +1,4 @@
-import {
-  Array,
-  Effect,
-  Match as M,
-  Option,
-  Schema as S,
-  Stream,
-  String,
-} from 'effect'
+import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command, Runtime, Subscription } from 'foldkit'
 import { Document, Html, html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -15,23 +7,19 @@ import { evo } from 'foldkit/struct'
 import { Url, toString as urlToString } from 'foldkit/url'
 
 import { AuthService, AuthSignedOut, AuthState } from './authService'
+import * as AuthPanel from './authPanel'
+import { ErrorMessage } from './errorMessage'
 import { AppRoute, homeRouter, todosRouter, urlToAppRoute } from './route'
-import { Todo, TodoId, TodosBackend } from './todosBackend'
-import { ErrorMessage, errorMessage, toErrorMessage } from './userFacingError'
+import { TodosBackend } from './todosBackend'
+import * as TodosPage from './todosPage'
 
 // MODEL
-
-const LoadState = S.Literals(['Loading', 'Loaded', 'Failed'])
-type LoadState = typeof LoadState.Type
 
 export const Model = S.Struct({
   route: AppRoute,
   authState: AuthState,
-  magicLinkEmail: S.String,
-  todos: S.Array(Todo),
-  newTodoText: S.String,
-  loadState: LoadState,
-  maybeNotice: S.Option(S.String),
+  authPanel: AuthPanel.Model,
+  todosPage: TodosPage.Model,
   maybeError: S.Option(ErrorMessage),
 })
 export type Model = typeof Model.Type
@@ -42,56 +30,32 @@ export const CompletedNavigateInternal = m('CompletedNavigateInternal')
 export const CompletedLoadExternal = m('CompletedLoadExternal')
 export const ClickedLink = m('ClickedLink', { request: UrlRequest })
 export const ChangedUrl = m('ChangedUrl', { url: Url })
-export const UpdatedNewTodo = m('UpdatedNewTodo', { text: S.String })
-export const UpdatedMagicLinkEmail = m('UpdatedMagicLinkEmail', {
-  email: S.String,
-})
-export const ClickedSignInWithGitHub = m('ClickedSignInWithGitHub')
-export const SucceededStartedGitHubSignIn = m('SucceededStartedGitHubSignIn')
-export const SubmittedMagicLink = m('SubmittedMagicLink')
-export const SentMagicLink = m('SentMagicLink')
-export const FailedSignIn = m('FailedSignIn', { error: ErrorMessage })
-export const ClickedSignOut = m('ClickedSignOut')
-export const SucceededSignOut = m('SucceededSignOut')
-export const FailedSignOut = m('FailedSignOut', { error: ErrorMessage })
 export const UpdatedAuthState = m('UpdatedAuthState', { authState: AuthState })
 export const FailedLoadAuthState = m('FailedLoadAuthState', {
   error: ErrorMessage,
 })
-export const AddedTodo = m('AddedTodo')
-export const CreatedTodo = m('CreatedTodo')
-export const FailedCreateTodo = m('FailedCreateTodo', { error: ErrorMessage })
-export const ClickedDeleteTodo = m('ClickedDeleteTodo', { id: TodoId })
-export const DeletedTodo = m('DeletedTodo')
-export const FailedDeleteTodo = m('FailedDeleteTodo', { error: ErrorMessage })
-export const LoadedTodos = m('LoadedTodos', { todos: S.Array(Todo) })
-export const FailedLoadTodos = m('FailedLoadTodos', { error: ErrorMessage })
+export const ClickedSignOut = m('ClickedSignOut')
+export const SucceededSignOut = m('SucceededSignOut')
+export const FailedSignOut = m('FailedSignOut', { error: ErrorMessage })
+export const GotAuthPanelMessage = m('GotAuthPanelMessage', {
+  message: AuthPanel.Message,
+})
+export const GotTodosPageMessage = m('GotTodosPageMessage', {
+  message: TodosPage.Message,
+})
 
 export const Message = S.Union([
   CompletedNavigateInternal,
   CompletedLoadExternal,
   ClickedLink,
   ChangedUrl,
-  UpdatedNewTodo,
-  UpdatedMagicLinkEmail,
-  ClickedSignInWithGitHub,
-  SucceededStartedGitHubSignIn,
-  SubmittedMagicLink,
-  SentMagicLink,
-  FailedSignIn,
+  UpdatedAuthState,
+  FailedLoadAuthState,
   ClickedSignOut,
   SucceededSignOut,
   FailedSignOut,
-  UpdatedAuthState,
-  FailedLoadAuthState,
-  AddedTodo,
-  CreatedTodo,
-  FailedCreateTodo,
-  ClickedDeleteTodo,
-  DeletedTodo,
-  FailedDeleteTodo,
-  LoadedTodos,
-  FailedLoadTodos,
+  GotAuthPanelMessage,
+  GotTodosPageMessage,
 ])
 export type Message = typeof Message.Type
 
@@ -109,11 +73,8 @@ export const init: Runtime.RoutingProgramInit<Model, Message, Flags> = (
   {
     route: urlToAppRoute(url),
     authState: { _tag: 'AuthChecking' },
-    magicLinkEmail: '',
-    todos: [],
-    newTodoText: '',
-    loadState: 'Loading',
-    maybeNotice: Option.none(),
+    authPanel: AuthPanel.init(),
+    todosPage: TodosPage.init(),
     maybeError: Option.none(),
   },
   [],
@@ -152,61 +113,29 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         [],
       ],
 
-      UpdatedNewTodo: ({ text }) => [
-        evo(model, { newTodoText: () => text }),
-        [],
-      ],
-
-      UpdatedMagicLinkEmail: ({ email }) => [
-        evo(model, { magicLinkEmail: () => email }),
-        [],
-      ],
-
-      ClickedSignInWithGitHub: () => [
+      UpdatedAuthState: ({ authState }) => [
         evo(model, {
-          maybeNotice: () => Option.none(),
+          authState: () => authState,
           maybeError: () => Option.none(),
         }),
-        [SignInWithGitHub()],
+        [],
       ],
 
-      SucceededStartedGitHubSignIn: () => [model, []],
-
-      SubmittedMagicLink: () => {
-        const email = String.trim(model.magicLinkEmail)
-
-        if (String.isEmpty(email)) {
-          return [
-            evo(model, {
-              maybeError: () =>
-                Option.some(errorMessage('Enter an email address.')),
-            }),
-            [],
-          ]
-        }
+      FailedLoadAuthState: ({ error }) => {
+        const [authPanel] = AuthPanel.update(
+          model.authPanel,
+          AuthPanel.FailedLoadAuthState({ error }),
+        )
 
         return [
           evo(model, {
-            maybeNotice: () => Option.none(),
-            maybeError: () => Option.none(),
+            authState: () => AuthSignedOut(),
+            authPanel: () => authPanel,
+            maybeError: () => Option.some(error),
           }),
-          [SendMagicLink({ email })],
+          [],
         ]
       },
-
-      SentMagicLink: () => [
-        evo(model, {
-          maybeNotice: () =>
-            Option.some('Check your email for a sign-in link.'),
-          maybeError: () => Option.none(),
-        }),
-        [],
-      ],
-
-      FailedSignIn: ({ error }) => [
-        evo(model, { maybeError: () => Option.some(error) }),
-        [],
-      ],
 
       ClickedSignOut: () => [
         evo(model, { maybeError: () => Option.none() }),
@@ -216,9 +145,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
       SucceededSignOut: () => [
         evo(model, {
           authState: () => AuthSignedOut(),
-          todos: () => [],
-          loadState: () => 'Loading',
-          maybeNotice: () => Option.none(),
+          todosPage: () => TodosPage.init(),
           maybeError: () => Option.none(),
         }),
         [],
@@ -229,86 +156,62 @@ export const update = (model: Model, message: Message): UpdateReturn =>
         [],
       ],
 
-      UpdatedAuthState: ({ authState }) => [
-        evo(model, {
-          authState: () => authState,
-          maybeNotice: () => Option.none(),
-          maybeError: () => Option.none(),
-        }),
-        [],
-      ],
+      GotAuthPanelMessage: ({ message }) =>
+        handleGotAuthPanelMessage(model, message),
 
-      FailedLoadAuthState: ({ error }) => [
-        evo(model, {
-          authState: () => AuthSignedOut(),
-          maybeError: () => Option.some(error),
-        }),
-        [],
-      ],
-
-      AddedTodo: () => {
-        if (model.authState._tag !== 'AuthSignedIn') {
-          return [
-            evo(model, {
-              maybeError: () =>
-                Option.some(errorMessage('Sign in before adding todos.')),
-            }),
-            [],
-          ]
-        }
-
-        const text = String.trim(model.newTodoText)
-
-        if (String.isEmpty(text)) {
-          return [model, []]
-        }
-
-        return [
-          evo(model, {
-            newTodoText: () => '',
-            maybeError: () => Option.none(),
-          }),
-          [CreateTodo({ text })],
-        ]
-      },
-
-      CreatedTodo: () => [model, []],
-
-      FailedCreateTodo: ({ error }) => [
-        evo(model, { maybeError: () => Option.some(error) }),
-        [],
-      ],
-
-      ClickedDeleteTodo: ({ id }) => [
-        evo(model, { maybeError: () => Option.none() }),
-        model.authState._tag === 'AuthSignedIn' ? [DeleteTodo({ id })] : [],
-      ],
-
-      DeletedTodo: () => [model, []],
-
-      FailedDeleteTodo: ({ error }) => [
-        evo(model, { maybeError: () => Option.some(error) }),
-        [],
-      ],
-
-      LoadedTodos: ({ todos }) => [
-        evo(model, {
-          todos: () => todos,
-          loadState: () => 'Loaded',
-          maybeError: () => Option.none(),
-        }),
-        [],
-      ],
-
-      FailedLoadTodos: ({ error }) => [
-        evo(model, {
-          loadState: () => 'Failed',
-          maybeError: () => Option.some(error),
-        }),
-        [],
-      ],
+      GotTodosPageMessage: ({ message }) =>
+        handleGotTodosPageMessage(model, message),
     }),
   )
+
+const handleGotAuthPanelMessage = (
+  model: Model,
+  message: AuthPanel.Message,
+): UpdateReturn => {
+  const [authPanel, commands] = AuthPanel.update(model.authPanel, message)
+  const mappedCommands = Command.mapMessages(commands, message =>
+    GotAuthPanelMessage({ message }),
+  )
+
+  return [
+    evo(model, {
+      authPanel: () => authPanel,
+      maybeError: () => Option.none(),
+    }),
+    mappedCommands,
+  ]
+}
+
+const handleGotTodosPageMessage = (
+  model: Model,
+  message: TodosPage.Message,
+): UpdateReturn => {
+  const [todosPage, commands, maybeOutMessage] = TodosPage.update(
+    model.todosPage,
+    message,
+  )
+  const mappedCommands = Command.mapMessages(commands, message =>
+    GotTodosPageMessage({ message }),
+  )
+  const nextModel = evo(model, {
+    todosPage: () => todosPage,
+    maybeError: () => Option.none(),
+  })
+
+  return Option.match(maybeOutMessage, {
+    onNone: () => [nextModel, mappedCommands],
+    onSome: outMessage =>
+      M.value(outMessage).pipe(
+        withUpdateReturn,
+        M.tagsExhaustive({
+          RequestedSignOut: () => [
+            evo(nextModel, { maybeError: () => Option.none() }),
+            [...mappedCommands, SignOut()],
+          ],
+        }),
+      ),
+  })
+}
 
 // COMMAND
 
@@ -324,51 +227,6 @@ const LoadExternal = Command.define(
   CompletedLoadExternal,
 )(({ href }) => load(href).pipe(Effect.as(CompletedLoadExternal())))
 
-export const SignInWithGitHub = Command.define(
-  'SignInWithGitHub',
-  SucceededStartedGitHubSignIn,
-  FailedSignIn,
-)(
-  Effect.gen(function* () {
-    const auth = yield* AuthService
-    yield* auth.signInWithGitHub
-    return SucceededStartedGitHubSignIn()
-  }).pipe(
-    Effect.catch(error =>
-      Effect.succeed(
-        FailedSignIn({
-          error: toErrorMessage(errorMessage('Could not start sign-in.'))(
-            error,
-          ),
-        }),
-      ),
-    ),
-  ),
-)
-
-export const SendMagicLink = Command.define(
-  'SendMagicLink',
-  { email: S.String },
-  SentMagicLink,
-  FailedSignIn,
-)(({ email }) =>
-  Effect.gen(function* () {
-    const auth = yield* AuthService
-    yield* auth.sendMagicLink(email)
-    return SentMagicLink()
-  }).pipe(
-    Effect.catch(error =>
-      Effect.succeed(
-        FailedSignIn({
-          error: toErrorMessage(errorMessage('Could not send sign-in link.'))(
-            error,
-          ),
-        }),
-      ),
-    ),
-  ),
-)
-
 export const SignOut = Command.define(
   'SignOut',
   SucceededSignOut,
@@ -380,53 +238,7 @@ export const SignOut = Command.define(
     return SucceededSignOut()
   }).pipe(
     Effect.catch(error =>
-      Effect.succeed(
-        FailedSignOut({
-          error: toErrorMessage(errorMessage('Could not sign out.'))(error),
-        }),
-      ),
-    ),
-  ),
-)
-
-export const CreateTodo = Command.define(
-  'CreateTodo',
-  { text: S.String },
-  CreatedTodo,
-  FailedCreateTodo,
-)(({ text }) =>
-  Effect.gen(function* () {
-    const backend = yield* TodosBackend
-    yield* backend.create(text)
-    return CreatedTodo()
-  }).pipe(
-    Effect.catch(error =>
-      Effect.succeed(
-        FailedCreateTodo({
-          error: toErrorMessage(errorMessage('Could not create todo.'))(error),
-        }),
-      ),
-    ),
-  ),
-)
-
-export const DeleteTodo = Command.define(
-  'DeleteTodo',
-  { id: TodoId },
-  DeletedTodo,
-  FailedDeleteTodo,
-)(({ id }) =>
-  Effect.gen(function* () {
-    const backend = yield* TodosBackend
-    yield* backend.delete(id)
-    return DeletedTodo()
-  }).pipe(
-    Effect.catch(error =>
-      Effect.succeed(
-        FailedDeleteTodo({
-          error: toErrorMessage(errorMessage('Could not delete todo.'))(error),
-        }),
-      ),
+      Effect.succeed(FailedSignOut({ error: error.message })),
     ),
   ),
 )
@@ -450,9 +262,7 @@ export const subscriptions = Subscription.make<
               Stream.catch(error =>
                 Stream.succeed(
                   FailedLoadAuthState({
-                    error: toErrorMessage(
-                      errorMessage('Could not load auth state.'),
-                    )(error),
+                    error: error.message,
                   }),
                 ),
               ),
@@ -474,13 +284,17 @@ export const subscriptions = Subscription.make<
           Stream.fromEffect(TodosBackend).pipe(
             Stream.flatMap(backend =>
               backend.todos.pipe(
-                Stream.map(todos => LoadedTodos({ todos })),
+                Stream.map(todos =>
+                  GotTodosPageMessage({
+                    message: TodosPage.LoadedTodos({ todos }),
+                  }),
+                ),
                 Stream.catch(error =>
                   Stream.succeed(
-                    FailedLoadTodos({
-                      error: toErrorMessage(
-                        errorMessage('Could not load todos.'),
-                      )(error),
+                    GotTodosPageMessage({
+                      message: TodosPage.FailedLoadTodos({
+                        error: error.message,
+                      }),
                     }),
                   ),
                 ),
@@ -494,48 +308,6 @@ export const subscriptions = Subscription.make<
 }))
 
 // VIEW
-
-const noticeView = (model: Model): Html => {
-  const h = html<Message>()
-
-  return Option.match(model.maybeNotice, {
-    onNone: () => h.empty,
-    onSome: notice =>
-      h.div(
-        [
-          h.Class(
-            'rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700',
-          ),
-        ],
-        [notice],
-      ),
-  })
-}
-
-const errorView = (model: Model): Html => {
-  const h = html<Message>()
-
-  return Option.match(model.maybeError, {
-    onNone: () => h.empty,
-    onSome: error => {
-      const text = String.trim(error)
-
-      if (String.isEmpty(text)) {
-        return h.empty
-      }
-
-      return h.div(
-        [
-          h.Role('alert'),
-          h.Class(
-            'rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700',
-          ),
-        ],
-        [text],
-      )
-    },
-  })
-}
 
 const landingView = (): Html => {
   const h = html<Message>()
@@ -565,57 +337,22 @@ const landingView = (): Html => {
   )
 }
 
-const authView = (model: Model): Html => {
+const rootErrorView = (model: Model): Html => {
   const h = html<Message>()
 
-  return h.div(
-    [h.Class('mx-auto max-w-md rounded-xl bg-white p-6 shadow-lg')],
-    [
-      h.h1(
-        [h.Class('mb-2 text-center text-3xl font-bold text-gray-800')],
-        ['Todo App'],
-      ),
-      h.p(
-        [h.Class('mb-6 text-center text-sm text-gray-500')],
-        ['Sign in to view todos.'],
-      ),
-      h.button(
+  return Option.match(model.maybeError, {
+    onNone: () => h.empty,
+    onSome: error =>
+      h.div(
         [
-          h.Type('button'),
+          h.Role('alert'),
           h.Class(
-            'mb-3 w-full rounded-lg bg-gray-900 px-5 py-2 text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-700',
-          ),
-          h.OnClick(ClickedSignInWithGitHub()),
-        ],
-        ['Continue with GitHub'],
-      ),
-      h.form(
-        [h.Class('space-y-3'), h.OnSubmit(SubmittedMagicLink())],
-        [
-          h.label([h.For('magic-link-email'), h.Class('sr-only')], ['Email']),
-          h.input([
-            h.Id('magic-link-email'),
-            h.Value(model.magicLinkEmail),
-            h.Placeholder('Email address'),
-            h.Class(
-              'w-full rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500',
-            ),
-            h.OnInput(email => UpdatedMagicLinkEmail({ email })),
-          ]),
-          h.button(
-            [
-              h.Type('submit'),
-              h.Class(
-                'w-full rounded-lg border border-blue-200 px-5 py-2 text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500',
-              ),
-            ],
-            ['Email me a link'],
+            'rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700',
           ),
         ],
+        [error],
       ),
-      h.div([h.Class('mt-4 space-y-2')], [noticeView(model), errorView(model)]),
-    ],
-  )
+  })
 }
 
 const checkingAuthView = (model: Model): Html => {
@@ -629,132 +366,40 @@ const checkingAuthView = (model: Model): Html => {
         [h.Role('status'), h.Class('text-sm text-gray-500')],
         ['Checking auth...'],
       ),
-      h.div([h.Class('mt-4')], [errorView(model)]),
+      h.div([h.Class('mt-4')], [rootErrorView(model)]),
     ],
   )
 }
 
-const statusText = (model: Model): string =>
-  M.value(model.loadState).pipe(
-    M.when('Loading', () => 'Loading todos from Convex...'),
-    M.when('Loaded', () => `${Array.length(model.todos)} todos`),
-    M.when('Failed', () => 'Could not load todos'),
-    M.exhaustive,
-  )
-
-const todoItemView = (todo: Todo): Html => {
+const protectedTodosView = (model: Model): Html => {
   const h = html<Message>()
 
-  return h.keyed('li')(
-    todo._id,
-    [h.Class('rounded-lg border border-gray-200 bg-white px-4 py-3')],
-    [
-      h.div(
-        [h.Class('flex items-center justify-between gap-3')],
-        [
-          h.div([h.Class('min-w-0 flex-1 text-gray-900')], [todo.text]),
-          h.button(
-            [
-              h.Type('button'),
-              h.AriaLabel(`Delete ${todo.text}`),
-              h.Class(
-                'shrink-0 rounded border border-red-200 px-2 py-1 text-sm text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500',
-              ),
-              h.OnClick(ClickedDeleteTodo({ id: todo._id })),
-            ],
-            ['Delete'],
-          ),
-        ],
-      ),
-    ],
-  )
-}
-
-const todosView = (model: Model): Html => {
-  const h = html<Message>()
-
-  return h.div(
-    [h.Class('mx-auto max-w-md rounded-xl bg-white p-6 shadow-lg')],
-    [
-      h.div(
-        [h.Class('mb-4 flex items-start justify-between gap-3')],
-        [
-          h.div(
-            [],
-            [
-              h.h1([h.Class('text-3xl font-bold text-gray-800')], ['Todo App']),
-              h.div(
-                [h.Class('mt-1 text-sm text-gray-500'), h.Role('status')],
-                [statusText(model)],
-              ),
-            ],
-          ),
-          h.button(
-            [
-              h.Type('button'),
-              h.Class(
-                'shrink-0 rounded border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500',
-              ),
-              h.OnClick(ClickedSignOut()),
-            ],
-            ['Sign out'],
-          ),
-        ],
-      ),
-
-      h.form(
-        [h.Class('mb-4'), h.OnSubmit(AddedTodo())],
-        [
-          h.label([h.For('new-todo'), h.Class('sr-only')], ['New todo']),
-          h.div(
-            [h.Class('flex gap-3')],
-            [
-              h.input([
-                h.Id('new-todo'),
-                h.Value(model.newTodoText),
-                h.Placeholder('What needs to be done?'),
-                h.Class(
-                  'min-w-0 flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500',
-                ),
-                h.OnInput(text => UpdatedNewTodo({ text })),
-              ]),
-              h.button(
-                [
-                  h.Type('submit'),
-                  h.Class(
-                    'rounded-lg bg-blue-500 px-5 py-2 text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500',
-                  ),
-                ],
-                ['Add'],
-              ),
-            ],
-          ),
-        ],
-      ),
-
-      errorView(model),
-
-      Array.match(model.todos, {
-        onEmpty: () =>
-          h.div(
-            [h.Class('py-8 text-center text-gray-500')],
-            ['No todos yet. Add one above.'],
-          ),
-        onNonEmpty: todos =>
-          h.ul([h.Class('mt-4 space-y-2')], Array.map(todos, todoItemView)),
-      }),
-    ],
-  )
-}
-
-const protectedTodosView = (model: Model): Html =>
-  M.value(model.authState).pipe(
+  return M.value(model.authState).pipe(
     M.tagsExhaustive({
       AuthChecking: () => checkingAuthView(model),
-      AuthSignedOut: () => authView(model),
-      AuthSignedIn: () => todosView(model),
+      AuthSignedOut: () =>
+        h.submodel({
+          slotId: 'auth-panel',
+          model: model.authPanel,
+          view: AuthPanel.view,
+          toParentMessage: message => GotAuthPanelMessage({ message }),
+        }),
+      AuthSignedIn: () =>
+        h.div(
+          [],
+          [
+            rootErrorView(model),
+            h.submodel({
+              slotId: 'todos-page',
+              model: model.todosPage,
+              view: TodosPage.view,
+              toParentMessage: message => GotTodosPageMessage({ message }),
+            }),
+          ],
+        ),
     }),
   )
+}
 
 const notFoundView = (): Html => {
   const h = html<Message>()
@@ -800,3 +445,28 @@ export const view = (model: Model): Document => {
 // FLAG
 
 export const flags: Effect.Effect<Flags> = Effect.succeed({})
+
+export {
+  ClickedSignInWithGitHub,
+  FailedLoadAuthState as FailedAuthPanelLoadAuthState,
+  FailedSignIn,
+  SendMagicLink,
+  SentMagicLink,
+  SignInWithGitHub,
+  SubmittedMagicLink,
+  SucceededStartedGitHubSignIn,
+  UpdatedMagicLinkEmail,
+} from './authPanel'
+export {
+  AddedTodo,
+  ClickedDeleteTodo,
+  CreateTodo,
+  CreatedTodo,
+  DeleteTodo,
+  DeletedTodo,
+  FailedCreateTodo,
+  FailedDeleteTodo,
+  FailedLoadTodos,
+  LoadedTodos,
+  UpdatedNewTodo,
+} from './todosPage'

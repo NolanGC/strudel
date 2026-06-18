@@ -3,9 +3,12 @@ import { Story } from 'foldkit'
 import { describe, expect, test } from 'vitest'
 
 import { AuthSignedIn, AuthSignedOut } from '../authService'
+import * as AuthPanel from '../authPanel'
+import * as TodosPage from '../todosPage'
 import {
   ClickedSignInWithGitHub,
   FailedSignIn,
+  GotAuthPanelMessage,
   type Model,
   SendMagicLink,
   SentMagicLink,
@@ -16,16 +19,13 @@ import {
   update,
 } from '../main'
 import { TodosRoute } from '../route'
-import { errorMessage } from '../userFacingError'
+import { errorMessage } from '../errorMessage'
 
 const signedOutModel: Model = {
   route: TodosRoute(),
   authState: AuthSignedOut(),
-  magicLinkEmail: '',
-  todos: [],
-  newTodoText: '',
-  loadState: 'Loading',
-  maybeNotice: Option.none(),
+  authPanel: AuthPanel.init(),
+  todosPage: TodosPage.init(),
   maybeError: Option.none(),
 }
 
@@ -34,9 +34,13 @@ describe('auth update', () => {
     Story.story(
       update,
       Story.with(signedOutModel),
-      Story.message(UpdatedMagicLinkEmail({ email: 'nolan@example.com' })),
+      Story.message(
+        GotAuthPanelMessage({
+          message: UpdatedMagicLinkEmail({ email: 'nolan@example.com' }),
+        }),
+      ),
       Story.model(model => {
-        expect(model.magicLinkEmail).toBe('nolan@example.com')
+        expect(model.authPanel.magicLinkEmail).toBe('nolan@example.com')
       }),
     )
   })
@@ -46,16 +50,23 @@ describe('auth update', () => {
       update,
       Story.with({
         ...signedOutModel,
-        magicLinkEmail: '  nolan@example.com  ',
+        authPanel: {
+          ...signedOutModel.authPanel,
+          magicLinkEmail: '  nolan@example.com  ',
+        },
       }),
-      Story.message(SubmittedMagicLink()),
+      Story.message(GotAuthPanelMessage({ message: SubmittedMagicLink() })),
       Story.Command.expectHas(SendMagicLink),
-      Story.Command.resolve(SendMagicLink, SentMagicLink()),
+      Story.Command.resolve(
+        SendMagicLink,
+        SentMagicLink(),
+        message => GotAuthPanelMessage({ message }),
+      ),
       Story.model(model => {
-        expect(model.maybeNotice).toStrictEqual(
+        expect(model.authPanel.maybeNotice).toStrictEqual(
           Option.some('Check your email for a sign-in link.'),
         )
-        expect(model.maybeError).toStrictEqual(Option.none())
+        expect(model.authPanel.maybeError).toStrictEqual(Option.none())
       }),
     )
   })
@@ -63,11 +74,14 @@ describe('auth update', () => {
   test('SubmittedMagicLink rejects an empty email before running a command', () => {
     Story.story(
       update,
-      Story.with({ ...signedOutModel, magicLinkEmail: '   ' }),
-      Story.message(SubmittedMagicLink()),
+      Story.with({
+        ...signedOutModel,
+        authPanel: { ...signedOutModel.authPanel, magicLinkEmail: '   ' },
+      }),
+      Story.message(GotAuthPanelMessage({ message: SubmittedMagicLink() })),
       Story.Command.expectNone(),
       Story.model(model => {
-        expect(model.maybeError).toStrictEqual(
+        expect(model.authPanel.maybeError).toStrictEqual(
           Option.some(errorMessage('Enter an email address.')),
         )
       }),
@@ -78,9 +92,15 @@ describe('auth update', () => {
     Story.story(
       update,
       Story.with(signedOutModel),
-      Story.message(ClickedSignInWithGitHub()),
+      Story.message(
+        GotAuthPanelMessage({ message: ClickedSignInWithGitHub() }),
+      ),
       Story.Command.expectHas(SignInWithGitHub),
-      Story.Command.resolve(SignInWithGitHub, SucceededStartedGitHubSignIn()),
+      Story.Command.resolve(
+        SignInWithGitHub,
+        SucceededStartedGitHubSignIn(),
+        message => GotAuthPanelMessage({ message }),
+      ),
     )
   })
 
@@ -91,9 +111,13 @@ describe('auth update', () => {
         ...signedOutModel,
         authState: AuthSignedIn({ session: { displayName: 'Nolan' } }),
       }),
-      Story.message(FailedSignIn({ error: errorMessage('Auth unavailable') })),
+      Story.message(
+        GotAuthPanelMessage({
+          message: FailedSignIn({ error: errorMessage('Auth unavailable') }),
+        }),
+      ),
       Story.model(model => {
-        expect(model.maybeError).toStrictEqual(
+        expect(model.authPanel.maybeError).toStrictEqual(
           Option.some(errorMessage('Auth unavailable')),
         )
       }),

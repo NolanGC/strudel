@@ -1,11 +1,21 @@
 import { GenericId } from '@confect/core'
 import { WebSocketClient } from '@confect/js'
-import { Context, Data, Effect, Layer, Schema as S, Stream } from 'effect'
+import {
+  Context,
+  Data,
+  Effect,
+  Layer,
+  Match as M,
+  Option,
+  Schema as S,
+  Stream,
+} from 'effect'
 
 import refs from '../confect/_generated/refs'
 import { Todos } from '../confect/tables/todos'
+import { NotAuthenticated, TodoStorageError } from '../confect/todos.spec'
 import { AuthService } from './authService'
-import { ErrorMessage, errorMessage, toErrorMessage } from './userFacingError'
+import { ErrorMessage, errorMessage } from './errorMessage'
 
 export const Todo = Todos.Doc
 export type Todo = typeof Todo.Type
@@ -16,36 +26,44 @@ export type TodoId = typeof TodoId.Type
 const BackendOperation = S.Literals(['ListTodos', 'CreateTodo', 'DeleteTodo'])
 type BackendOperation = typeof BackendOperation.Type
 
-const errorDisplayText = (error: unknown): ErrorMessage => {
-  if (typeof error === 'object' && error !== null && '_tag' in error) {
-    const tag = globalThis.String(error._tag)
-    return tag === 'NotAuthenticated'
-      ? errorMessage('Sign in to sync todos.')
-      : toErrorMessage(errorMessage('Could not sync todos.'))(tag)
-  }
-
-  return toErrorMessage(errorMessage('Could not sync todos.'))(error)
-}
-
 export class TodosBackendError extends Data.TaggedError('TodosBackendError')<{
   readonly operation: BackendOperation
   readonly message: ErrorMessage
-  readonly cause: unknown
+  readonly cause: TodoBackendCause
 }> {}
+
+type TodoBackendCause =
+  | NotAuthenticated
+  | TodoStorageError
+  | WebSocketClient.WebSocketClientError
+  | S.SchemaError
+
+const todoBackendMessage = (error: TodoBackendCause): ErrorMessage =>
+  M.value(error).pipe(
+    M.tags({
+      NotAuthenticated: ({ userMessage }) => errorMessage(userMessage),
+      TodoStorageError: ({ userMessage }) => errorMessage(userMessage),
+      WebSocketClientError: () => errorMessage('Could not sync todos.'),
+      SchemaError: () => errorMessage('Could not sync todos.'),
+    }),
+    M.exhaustive,
+  )
 
 const toBackendError =
   (operation: BackendOperation) =>
-  (cause: unknown): TodosBackendError =>
+  (cause: TodoBackendCause): TodosBackendError =>
     new TodosBackendError({
       operation,
-      message: errorDisplayText(cause),
+      message: todoBackendMessage(cause),
       cause,
     })
 
 type TodosBackendShape = {
   readonly todos: Stream.Stream<ReadonlyArray<Todo>, TodosBackendError>
   readonly create: (text: string) => Effect.Effect<TodoId, TodosBackendError>
-  readonly delete: (id: TodoId) => Effect.Effect<null, TodosBackendError>
+  readonly delete: (
+    id: TodoId,
+  ) => Effect.Effect<Option.Option<TodoId>, TodosBackendError>
 }
 
 export class TodosBackend extends Context.Service<

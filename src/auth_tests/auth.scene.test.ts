@@ -3,6 +3,7 @@ import { Scene } from 'foldkit'
 import { describe, test } from 'vitest'
 
 import { AuthSignedIn, AuthSignedOut } from '../authService'
+import * as AuthPanel from '../authPanel'
 import {
   type Model,
   SendMagicLink,
@@ -11,19 +12,18 @@ import {
   SignOut,
   SucceededSignOut,
   SucceededStartedGitHubSignIn,
+  GotAuthPanelMessage,
   update,
   view,
 } from '../main'
 import { HomeRoute, TodosRoute } from '../route'
+import * as TodosPage from '../todosPage'
 
 const signedOutTodosModel: Model = {
   route: TodosRoute(),
   authState: AuthSignedOut(),
-  magicLinkEmail: '',
-  todos: [],
-  newTodoText: '',
-  loadState: 'Loading',
-  maybeNotice: Option.none(),
+  authPanel: AuthPanel.init(),
+  todosPage: TodosPage.init(),
   maybeError: Option.none(),
 }
 
@@ -61,7 +61,11 @@ describe('auth scene', () => {
       Scene.with(signedOutTodosModel),
       Scene.click(Scene.role('button', { name: 'Continue with GitHub' })),
       Scene.Command.expectExact(SignInWithGitHub),
-      Scene.Command.resolve(SignInWithGitHub, SucceededStartedGitHubSignIn()),
+      Scene.Command.resolve(
+        SignInWithGitHub,
+        SucceededStartedGitHubSignIn(),
+        message => GotAuthPanelMessage({ message }),
+      ),
     )
   })
 
@@ -72,7 +76,11 @@ describe('auth scene', () => {
       Scene.type(Scene.label('Email'), 'nolan@example.com'),
       Scene.submit(Scene.selector('form')),
       Scene.Command.expectExact(SendMagicLink),
-      Scene.Command.resolve(SendMagicLink, SentMagicLink()),
+      Scene.Command.resolve(
+        SendMagicLink,
+        SentMagicLink(),
+        message => GotAuthPanelMessage({ message }),
+      ),
       Scene.expect(
         Scene.text('Check your email for a sign-in link.'),
       ).toExist(),

@@ -3,6 +3,7 @@ import { Scene } from 'foldkit'
 import { describe, expect, test } from 'vitest'
 
 import { AuthSignedIn } from '../authService'
+import * as AuthPanel from '../authPanel'
 import {
   CreateTodo,
   CreatedTodo,
@@ -10,22 +11,21 @@ import {
   DeletedTodo,
   FailedCreateTodo,
   FailedDeleteTodo,
+  GotTodosPageMessage,
   Model,
   update,
   view,
 } from '../main'
 import { TodosRoute } from '../route'
 import { TodoId } from '../todosBackend'
-import { errorMessage } from '../userFacingError'
+import * as TodosPage from '../todosPage'
+import { errorMessage } from '../errorMessage'
 
 const emptyModel: Model = {
   route: TodosRoute(),
   authState: AuthSignedIn({ session: { displayName: 'Nolan' } }),
-  magicLinkEmail: '',
-  todos: [],
-  newTodoText: '',
-  loadState: 'Loading',
-  maybeNotice: Option.none(),
+  authPanel: AuthPanel.init(),
+  todosPage: TodosPage.init(),
   maybeError: Option.none(),
 }
 
@@ -33,21 +33,24 @@ const todoId = S.decodeUnknownSync(TodoId)
 
 const modelWithTodos: Model = {
   ...emptyModel,
-  loadState: 'Loaded',
-  todos: [
-    {
-      _id: todoId('todo-1'),
-      _creationTime: 1000,
-      ownerUserId: 'user-1',
-      text: 'Buy milk',
-    },
-    {
-      _id: todoId('todo-2'),
-      _creationTime: 2000,
-      ownerUserId: 'user-1',
-      text: 'Walk the dog',
-    },
-  ],
+  todosPage: {
+    ...emptyModel.todosPage,
+    loadState: 'Loaded',
+    todos: [
+      {
+        _id: todoId('todo-1'),
+        _creationTime: 1000,
+        ownerUserId: 'user-1',
+        text: 'Buy milk',
+      },
+      {
+        _id: todoId('todo-2'),
+        _creationTime: 2000,
+        ownerUserId: 'user-1',
+        text: 'Walk the dog',
+      },
+    ],
+  },
 }
 
 describe('scene', () => {
@@ -80,7 +83,11 @@ describe('scene', () => {
       Scene.type(Scene.label('New todo'), 'Write tests'),
       Scene.submit(Scene.selector('form')),
       Scene.Command.expectExact(CreateTodo),
-      Scene.Command.resolve(CreateTodo, CreatedTodo()),
+      Scene.Command.resolve(
+        CreateTodo,
+        CreatedTodo(),
+        message => GotTodosPageMessage({ message }),
+      ),
       Scene.expect(Scene.label('New todo')).toHaveValue(''),
     )
   })
@@ -91,7 +98,11 @@ describe('scene', () => {
       Scene.with(modelWithTodos),
       Scene.click(Scene.role('button', { name: 'Delete Buy milk' })),
       Scene.Command.expectExact(DeleteTodo),
-      Scene.Command.resolve(DeleteTodo, DeletedTodo()),
+      Scene.Command.resolve(
+        DeleteTodo,
+        DeletedTodo(),
+        message => GotTodosPageMessage({ message }),
+      ),
     )
   })
 
@@ -103,8 +114,11 @@ describe('scene', () => {
       },
       Scene.with({
         ...emptyModel,
-        loadState: 'Failed',
-        maybeError: Option.some(errorMessage('Convex unavailable')),
+        todosPage: {
+          ...emptyModel.todosPage,
+          loadState: 'Failed',
+          maybeError: Option.some(errorMessage('Convex unavailable')),
+        },
       }),
       Scene.expect(Scene.role('status')).toContainText('Could not load todos'),
       Scene.expect(Scene.text('Convex unavailable')).toExist(),
@@ -115,8 +129,11 @@ describe('scene', () => {
     expect(
       S.decodeUnknownOption(Model)({
         ...emptyModel,
-        loadState: 'Failed',
-        maybeError: Option.some(''),
+        todosPage: {
+          ...emptyModel.todosPage,
+          loadState: 'Failed',
+          maybeError: Option.some(''),
+        },
       }),
     ).toStrictEqual(Option.none())
   })
@@ -130,7 +147,10 @@ describe('scene', () => {
       Scene.Command.expectExact(CreateTodo),
       Scene.Command.resolve(
         CreateTodo,
-        FailedCreateTodo({ error: errorMessage('Create unavailable') }),
+        FailedCreateTodo({
+          error: errorMessage('Create unavailable'),
+        }),
+        message => GotTodosPageMessage({ message }),
       ),
       Scene.expect(Scene.text('Create unavailable')).toExist(),
     )
@@ -144,7 +164,10 @@ describe('scene', () => {
       Scene.Command.expectExact(DeleteTodo),
       Scene.Command.resolve(
         DeleteTodo,
-        FailedDeleteTodo({ error: errorMessage('Delete unavailable') }),
+        FailedDeleteTodo({
+          error: errorMessage('Delete unavailable'),
+        }),
+        message => GotTodosPageMessage({ message }),
       ),
       Scene.expect(Scene.text('Delete unavailable')).toExist(),
     )

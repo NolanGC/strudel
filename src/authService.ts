@@ -6,13 +6,15 @@ import {
   Data,
   Effect,
   Layer,
+  Match as M,
   Option,
+  Ref,
   Schema as S,
   Stream,
 } from 'effect'
 import { ts } from 'foldkit/schema'
 
-import { ErrorMessage, errorMessage, toErrorMessage } from './userFacingError'
+import { ErrorMessage, errorMessage } from './errorMessage'
 
 export const AuthSession = S.Struct({
   displayName: S.String,
@@ -43,12 +45,24 @@ export class AuthServiceError extends Data.TaggedError('AuthServiceError')<{
   readonly cause: unknown
 }> {}
 
+const authErrorMessage = (operation: AuthOperation): ErrorMessage =>
+  M.value(operation).pipe(
+    M.when('ReadAuthState', () => errorMessage('Could not load auth state.')),
+    M.when('SignIn', () => errorMessage('Could not start sign-in.')),
+    M.when('SendMagicLink', () =>
+      errorMessage('Could not send sign-in link.'),
+    ),
+    M.when('SignOut', () => errorMessage('Could not sign out.')),
+    M.when('FetchToken', () => errorMessage('Authentication failed.')),
+    M.exhaustive,
+  )
+
 const toAuthServiceError =
   (operation: AuthOperation) =>
   (cause: unknown): AuthServiceError =>
     new AuthServiceError({
       operation,
-      message: toErrorMessage(errorMessage('Authentication failed.'))(cause),
+      message: authErrorMessage(operation),
       cause,
     })
 
@@ -111,48 +125,62 @@ const storageKey = (namespace: string, key: string): string =>
   `${key}_${namespace.replace(/[^a-zA-Z0-9]/g, '')}`
 
 const JwtPayload = S.Struct({
-  name: S.optional(S.Unknown),
-  email: S.optional(S.Unknown),
+  name: S.optional(S.String),
+  email: S.optional(S.String),
 })
+type JwtPayload = typeof JwtPayload.Type
 
-const readJwtDisplayName = (token: string): string => {
-  const parts = token.split('.')
+const authenticatedUserDisplayName = 'Authenticated user'
 
-  if (parts.length < 2) {
-    return 'Authenticated user'
-  }
+const jwtPayloadSegment = (token: string): Effect.Effect<string, unknown> =>
+  Effect.fromOption(Option.fromNullishOr(token.split('.')[1]))
 
-  try {
-    const maybePayload = S.decodeUnknownOption(JwtPayload)(
-      JSON.parse(globalThis.atob(parts[1] ?? '')),
-    )
+const decodeJwtPayloadJson = (
+  payloadSegment: string,
+): Effect.Effect<unknown, unknown> =>
+  Effect.try({
+    try: () => {
+      const parsed: unknown = JSON.parse(globalThis.atob(payloadSegment))
+      return parsed
+    },
+    catch: error => error,
+  })
 
-    if (Option.isNone(maybePayload)) {
-      return 'Authenticated user'
-    }
+const payloadDisplayName = (
+  payload: JwtPayload,
+): Effect.Effect<string, unknown> =>
+  Effect.fromOption(
+    Option.fromNullishOr(payload.name).pipe(
+      Option.orElse(() => Option.fromNullishOr(payload.email)),
+    ),
+  )
 
-    const payload = maybePayload.value
+const readJwtDisplayName = (token: string): Effect.Effect<string> =>
+  jwtPayloadSegment(token).pipe(
+    Effect.flatMap(decodeJwtPayloadJson),
+    Effect.flatMap(S.decodeUnknownEffect(JwtPayload)),
+    Effect.flatMap(payloadDisplayName),
+    Effect.catch(() => Effect.succeed(authenticatedUserDisplayName)),
+  )
 
-    if (typeof payload.name === 'string') {
-      return payload.name
-    }
+const tokenToAuthState = (
+  token: string | null,
+): Effect.Effect<AuthState, never> =>
+  Effect.gen(function* () {
+    const maybeToken = Option.fromNullishOr(token)
 
-    if (typeof payload.email === 'string') {
-      return payload.email
-    }
-  } catch {
-    return 'Authenticated user'
-  }
-
-  return 'Authenticated user'
-}
-
-const tokenToAuthState = (token: string | null): AuthState =>
-  token === null
-    ? AuthSignedOut()
-    : AuthSignedIn({
-        session: AuthSession.make({ displayName: readJwtDisplayName(token) }),
-      })
+    return yield* Option.match(maybeToken, {
+      onNone: () => Effect.succeed(AuthSignedOut()),
+      onSome: token =>
+        readJwtDisplayName(token).pipe(
+          Effect.map(displayName =>
+            AuthSignedIn({
+              session: AuthSession.make({ displayName }),
+            }),
+          ),
+        ),
+    })
+  })
 
 export const AuthServiceConvexAuthLive = ({
   convexUrl,
@@ -161,9 +189,9 @@ export const AuthServiceConvexAuthLive = ({
 }: ConvexAuthLayerOptions): Layer.Layer<AuthService> =>
   Layer.effect(
     AuthService,
-    Effect.sync(() => {
+    Effect.gen(function* () {
       const client = new ConvexHttpClient(convexUrl)
-      let token: string | null = null
+      const tokenRef = yield* Ref.make<string | null>(null)
 
       const jwtKey = storageKey(storageNamespace, JWT_STORAGE_KEY)
       const refreshTokenKey = storageKey(
@@ -172,74 +200,116 @@ export const AuthServiceConvexAuthLive = ({
       )
       const verifierKey = storageKey(storageNamespace, VERIFIER_STORAGE_KEY)
 
-      const setTokens = (tokens: ConvexAuthTokens | null) => {
-        token = tokens?.token ?? null
+      const storageGet = (
+        operation: AuthOperation,
+        key: string,
+      ): Effect.Effect<string | null, AuthServiceError> =>
+        Effect.try({
+          try: () => storage.getItem(key),
+          catch: toAuthServiceError(operation),
+        })
 
-        if (tokens === null) {
-          storage.removeItem(jwtKey)
-          storage.removeItem(refreshTokenKey)
-          return
-        }
+      const storageSet = (
+        operation: AuthOperation,
+        key: string,
+        value: string,
+      ): Effect.Effect<void, AuthServiceError> =>
+        Effect.try({
+          try: () => storage.setItem(key, value),
+          catch: toAuthServiceError(operation),
+        })
 
-        storage.setItem(jwtKey, tokens.token)
-        storage.setItem(refreshTokenKey, tokens.refreshToken)
-      }
+      const storageRemove = (
+        operation: AuthOperation,
+        key: string,
+      ): Effect.Effect<void, AuthServiceError> =>
+        Effect.try({
+          try: () => storage.removeItem(key),
+          catch: toAuthServiceError(operation),
+        })
 
-      const action = (args: (typeof signInReference)['_args']) =>
-        client.action(signInReference, args)
+      const setTokens = (
+        operation: AuthOperation,
+        tokens: ConvexAuthTokens | null,
+      ): Effect.Effect<void, AuthServiceError> =>
+        Effect.gen(function* () {
+          yield* Ref.set(tokenRef, tokens?.token ?? null)
 
-      const actionWithCurrentToken = (
+          if (tokens === null) {
+            yield* storageRemove(operation, jwtKey)
+            yield* storageRemove(operation, refreshTokenKey)
+            return
+          }
+
+          yield* storageSet(operation, jwtKey, tokens.token)
+          yield* storageSet(operation, refreshTokenKey, tokens.refreshToken)
+        })
+
+      const readStoredJwtIntoRef = (
+        operation: AuthOperation,
+      ): Effect.Effect<string | null, AuthServiceError> =>
+        Effect.gen(function* () {
+          const storedToken = yield* storageGet(operation, jwtKey)
+          yield* Ref.set(tokenRef, storedToken)
+          return storedToken
+        })
+
+      const setClientAuthFromCurrentToken = (
+        operation: AuthOperation,
+      ): Effect.Effect<void, AuthServiceError> =>
+        Effect.gen(function* () {
+          const token = yield* Ref.get(tokenRef)
+
+          if (token === null) {
+            return
+          }
+
+          yield* Effect.try({
+            try: () => client.setAuth(token),
+            catch: toAuthServiceError(operation),
+          })
+        })
+
+      const authAction = (
+        operation: AuthOperation,
         args: (typeof signInReference)['_args'],
-      ) => {
-        if (token !== null) {
-          client.setAuth(token)
-        }
+      ): Effect.Effect<SignInResult, AuthServiceError> =>
+        Effect.tryPromise({
+          try: () => client.action(signInReference, args),
+          catch: toAuthServiceError(operation),
+        })
 
-        return action(args)
-      }
+      const authActionWithCurrentToken = (
+        operation: AuthOperation,
+        args: (typeof signInReference)['_args'],
+      ): Effect.Effect<SignInResult, AuthServiceError> =>
+        Effect.gen(function* () {
+          yield* setClientAuthFromCurrentToken(operation)
+          return yield* authAction(operation, args)
+        })
 
-      const handleSignInResult = (result: SignInResult) => {
-        if (result.redirect !== undefined) {
-          if (result.verifier !== undefined) {
-            storage.setItem(verifierKey, result.verifier)
-          }
+      const signOutAction: Effect.Effect<unknown, AuthServiceError> =
+        Effect.tryPromise({
+          try: () => client.action(signOutReference, {}),
+          catch: toAuthServiceError('SignOut'),
+        })
 
-          globalThis.window.location.href = result.redirect
-          return
-        }
+      const redirectTo = (
+        operation: AuthOperation,
+        href: string,
+      ): Effect.Effect<void, AuthServiceError> =>
+        Effect.try({
+          try: () => {
+            globalThis.window.location.href = href
+          },
+          catch: toAuthServiceError(operation),
+        })
 
-        if ('tokens' in result) {
-          setTokens(result.tokens ?? null)
-        }
-      }
-
-      const refreshToken = Effect.tryPromise({
-        try: async () => {
-          const storedRefreshToken = storage.getItem(refreshTokenKey)
-
-          if (storedRefreshToken === null) {
-            setTokens(null)
-            return null
-          }
-
-          const result = await action({ refreshToken: storedRefreshToken })
-          setTokens(result.tokens ?? null)
-          return token
-        },
-        catch: toAuthServiceError('FetchToken'),
-      })
-
-      const handleRedirectCode = Effect.tryPromise({
-        try: async () => {
-          const code = new URLSearchParams(
-            globalThis.window.location.search,
-          ).get('code')
-
-          if (code === null) {
-            token = storage.getItem(jwtKey)
-            return tokenToAuthState(token)
-          }
-
+      const removeOAuthCodeFromCurrentUrl: Effect.Effect<
+        void,
+        AuthServiceError
+      > = Effect.try({
+        try: () => {
           const url = new URL(globalThis.window.location.href)
           url.searchParams.delete('code')
           globalThis.window.history.replaceState(
@@ -247,63 +317,151 @@ export const AuthServiceConvexAuthLive = ({
             '',
             url.pathname + url.search + url.hash,
           )
-
-          const verifier = storage.getItem(verifierKey) ?? undefined
-          storage.removeItem(verifierKey)
-          const result = await action({
-            params: { code },
-            ...(verifier === undefined ? {} : { verifier }),
-          })
-          setTokens(result.tokens ?? null)
-
-          return tokenToAuthState(token)
         },
         catch: toAuthServiceError('ReadAuthState'),
       })
 
-      return {
-        authState: Stream.fromEffect(handleRedirectCode),
-        signInWithGitHub: Effect.tryPromise({
-          try: async () => {
-            const result = await actionWithCurrentToken({
-              provider: 'github',
-              params: { redirectTo: '/todos' },
-            })
-            handleSignInResult(result)
-          },
-          catch: toAuthServiceError('SignIn'),
-        }),
-        sendMagicLink: (email: string) =>
-          Effect.tryPromise({
-            try: async () => {
-              const result = await actionWithCurrentToken({
-                provider: 'resend',
-                params: { email, redirectTo: '/todos' },
-              })
-              handleSignInResult(result)
-            },
-            catch: toAuthServiceError('SendMagicLink'),
-          }),
-        signOut: Effect.tryPromise({
-          try: async () => {
-            try {
-              if (token !== null) {
-                client.setAuth(token)
-              }
-              await client.action(signOutReference, {})
-            } finally {
-              setTokens(null)
+      const readOAuthCodeFromCurrentUrl: Effect.Effect<
+        string | null,
+        AuthServiceError
+      > = Effect.try({
+        try: () =>
+          new URLSearchParams(globalThis.window.location.search).get('code'),
+        catch: toAuthServiceError('ReadAuthState'),
+      })
+
+      const handleSignInResult = (
+        operation: AuthOperation,
+        result: SignInResult,
+      ): Effect.Effect<void, AuthServiceError> =>
+        Effect.gen(function* () {
+          if (result.redirect !== undefined) {
+            if (result.verifier !== undefined) {
+              yield* storageSet(operation, verifierKey, result.verifier)
             }
-          },
-          catch: toAuthServiceError('SignOut'),
-        }),
-        fetchToken: ({ forceRefreshToken }) =>
-          forceRefreshToken
-            ? refreshToken
-            : Effect.sync(() => {
-                token = token ?? storage.getItem(jwtKey)
-                return token
-              }),
+
+            yield* redirectTo(operation, result.redirect)
+            return
+          }
+
+          if ('tokens' in result) {
+            yield* setTokens(operation, result.tokens ?? null)
+          }
+        })
+
+      const refreshToken: Effect.Effect<string | null, AuthServiceError> =
+        Effect.gen(function* () {
+          const storedRefreshToken = yield* storageGet(
+            'FetchToken',
+            refreshTokenKey,
+          )
+
+          if (storedRefreshToken === null) {
+            yield* setTokens('FetchToken', null)
+            return null
+          }
+
+          const result = yield* authAction('FetchToken', {
+            refreshToken: storedRefreshToken,
+          })
+
+          yield* setTokens('FetchToken', result.tokens ?? null)
+
+          return yield* Ref.get(tokenRef)
+        })
+
+      const handleRedirectCode: Effect.Effect<AuthState, AuthServiceError> =
+        Effect.gen(function* () {
+          const code = yield* readOAuthCodeFromCurrentUrl
+
+          if (code === null) {
+            const storedToken = yield* readStoredJwtIntoRef('ReadAuthState')
+            return yield* tokenToAuthState(storedToken)
+          }
+
+          yield* removeOAuthCodeFromCurrentUrl
+
+          const verifier = yield* storageGet('ReadAuthState', verifierKey)
+          yield* storageRemove('ReadAuthState', verifierKey)
+
+          const result = yield* authAction('ReadAuthState', {
+            params: { code },
+            ...(verifier === null ? {} : { verifier }),
+          })
+
+          yield* setTokens('ReadAuthState', result.tokens ?? null)
+
+          const token = yield* Ref.get(tokenRef)
+          return yield* tokenToAuthState(token)
+        })
+
+      const loadAuthState = yield* Effect.cached(handleRedirectCode)
+
+      const readCurrentToken: Effect.Effect<string | null, AuthServiceError> =
+        loadAuthState.pipe(
+          Effect.flatMap(() =>
+            Effect.gen(function* () {
+              const currentToken = yield* Ref.get(tokenRef)
+
+              if (currentToken !== null) {
+                return currentToken
+              }
+
+              return yield* readStoredJwtIntoRef('FetchToken')
+            }),
+          ),
+        )
+
+      const signInWithGitHub: Effect.Effect<void, AuthServiceError> =
+        Effect.gen(function* () {
+          const result = yield* authActionWithCurrentToken('SignIn', {
+            provider: 'github',
+            params: { redirectTo: '/todos' },
+          })
+
+          yield* handleSignInResult('SignIn', result)
+        })
+
+      const sendMagicLink = (
+        email: string,
+      ): Effect.Effect<void, AuthServiceError> =>
+        Effect.gen(function* () {
+          const result = yield* authActionWithCurrentToken('SendMagicLink', {
+            provider: 'resend',
+            params: { email, redirectTo: '/todos' },
+          })
+
+          yield* handleSignInResult('SendMagicLink', result)
+        })
+
+      const signOut: Effect.Effect<void, AuthServiceError> = Effect.gen(
+        function* () {
+          const revokeRemoteSessionIfPossible = Effect.gen(function* () {
+            yield* setClientAuthFromCurrentToken('SignOut')
+            yield* signOutAction
+          }).pipe(Effect.ignore)
+
+          yield* revokeRemoteSessionIfPossible
+          yield* setTokens('SignOut', null)
+        },
+      )
+
+      const fetchToken = ({
+        forceRefreshToken,
+      }: FetchTokenArgs): Effect.Effect<
+        string | null | undefined,
+        AuthServiceError
+      > =>
+        forceRefreshToken
+          ? loadAuthState.pipe(Effect.andThen(refreshToken))
+          : readCurrentToken
+
+      return {
+        authState: Stream.fromEffect(loadAuthState),
+        signInWithGitHub,
+        sendMagicLink,
+        signOut,
+        fetchToken,
       } satisfies AuthServiceShape
     }),
   )
