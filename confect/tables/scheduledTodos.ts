@@ -1,12 +1,12 @@
 import { Table } from '@confect/server'
-import { GenericId } from '@confect/core'
 import { Schema } from 'effect'
 
-export const Todos = Table.make(
-  'todos',
+export const ScheduledTodos = Table.make(
+  'scheduledTodos',
   Schema.Struct({
     ownerUserId: Schema.String,
     text: Schema.String,
-    imageStorageId: Schema.optional(GenericId.GenericId('_storage')),
+    cron: Schema.String,
+    nextRunAt: Schema.Number,
   }),
 ).index('by_ownerUserId', ['ownerUserId'])

@@ -10,21 +10,43 @@ import {
   Schema as S,
   Stream,
 } from 'effect'
+import { File as FoldkitFile } from 'foldkit'
 
 import refs from '../confect/_generated/refs'
-import { Todos } from '../confect/tables/todos'
-import { NotAuthenticated, TodoStorageError } from '../confect/todos.spec'
+import {
+  NotAuthenticated,
+  Todo as TodoSchema,
+  TodoStorageError,
+} from '../confect/todos.spec'
 import { AuthService } from './authService'
 import { ErrorMessage, errorMessage } from './errorMessage'
 
-export const Todo = Todos.Doc
+export const Todo = TodoSchema
 export type Todo = typeof Todo.Type
 
 export const TodoId = GenericId.GenericId('todos')
 export type TodoId = typeof TodoId.Type
 
-const BackendOperation = S.Literals(['ListTodos', 'CreateTodo', 'DeleteTodo'])
+export const StorageId = GenericId.GenericId('_storage')
+export type StorageId = typeof StorageId.Type
+
+const StorageUploadResponse = S.Struct({ storageId: StorageId })
+
+const BackendOperation = S.Literals([
+  'ListTodos',
+  'CreateTodo',
+  'DeleteTodo',
+  'GenerateTodoImageUploadUrl',
+  'UploadTodoImage',
+  'AttachTodoImage',
+])
 type BackendOperation = typeof BackendOperation.Type
+
+export class TodoImageUploadError extends Data.TaggedError(
+  'TodoImageUploadError',
+)<{
+  readonly message: string
+}> {}
 
 export class TodosBackendError extends Data.TaggedError('TodosBackendError')<{
   readonly operation: BackendOperation
@@ -35,6 +57,7 @@ export class TodosBackendError extends Data.TaggedError('TodosBackendError')<{
 type TodoBackendCause =
   | NotAuthenticated
   | TodoStorageError
+  | TodoImageUploadError
   | WebSocketClient.WebSocketClientError
   | S.SchemaError
 
@@ -43,6 +66,7 @@ const todoBackendMessage = (error: TodoBackendCause): ErrorMessage =>
     M.tags({
       NotAuthenticated: ({ userMessage }) => errorMessage(userMessage),
       TodoStorageError: ({ userMessage }) => errorMessage(userMessage),
+      TodoImageUploadError: () => errorMessage('Could not upload image.'),
       WebSocketClientError: () => errorMessage('Could not sync todos.'),
       SchemaError: () => errorMessage('Could not sync todos.'),
     }),
@@ -64,6 +88,10 @@ type TodosBackendShape = {
   readonly delete: (
     id: TodoId,
   ) => Effect.Effect<Option.Option<TodoId>, TodosBackendError>
+  readonly uploadImage: (
+    id: TodoId,
+    file: FoldkitFile.File,
+  ) => Effect.Effect<Option.Option<TodoId>, TodosBackendError>
 }
 
 export class TodosBackend extends Context.Service<
@@ -83,6 +111,36 @@ export const TodosBackendLive = Layer.effect(
 
     yield* authenticate
 
+    const uploadFile = (
+      uploadUrl: string,
+      file: FoldkitFile.File,
+    ): Effect.Effect<
+      typeof StorageUploadResponse.Type,
+      TodoImageUploadError | S.SchemaError
+    > =>
+      Effect.tryPromise({
+        try: async () => {
+          const response = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type':
+                FoldkitFile.mimeType(file) || 'application/octet-stream',
+            },
+            body: file,
+          })
+
+          if (!response.ok) {
+            throw new Error(`Upload failed with status ${response.status}`)
+          }
+
+          return await response.json()
+        },
+        catch: error =>
+          new TodoImageUploadError({
+            message: error instanceof Error ? error.message : String(error),
+          }),
+      }).pipe(Effect.flatMap(S.decodeUnknownEffect(StorageUploadResponse)))
+
     return {
       todos: Stream.fromEffect(authenticate).pipe(
         Stream.flatMap(() => confect.reactiveQuery(refs.public.todos.list)),
@@ -101,6 +159,29 @@ export const TodosBackendLive = Layer.effect(
             confect.mutation(refs.public.todos.deleteTodo, { id }),
           ),
           Effect.mapError(toBackendError('DeleteTodo')),
+        ),
+      uploadImage: (id: TodoId, file: FoldkitFile.File) =>
+        authenticate.pipe(
+          Effect.flatMap(() =>
+            confect.mutation(refs.public.todos.generateImageUploadUrl, {}),
+          ),
+          Effect.mapError(toBackendError('GenerateTodoImageUploadUrl')),
+          Effect.flatMap(uploadUrl =>
+            uploadFile(uploadUrl, file).pipe(
+              Effect.mapError(toBackendError('UploadTodoImage')),
+            ),
+          ),
+          Effect.flatMap(({ storageId }) =>
+            authenticate.pipe(
+              Effect.flatMap(() =>
+                confect.mutation(refs.public.todos.attachImage, {
+                  id,
+                  storageId,
+                }),
+              ),
+              Effect.mapError(toBackendError('AttachTodoImage')),
+            ),
+          ),
         ),
     } satisfies TodosBackendShape
   }),

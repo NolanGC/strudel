@@ -2,10 +2,13 @@ import { Effect, Option, Schema as S, Stream } from 'effect'
 import { describe, expect, test } from 'vitest'
 
 import {
+  AttachTodoImage,
+  AttachedTodoImage,
   CreateTodo,
   CreatedTodo,
   DeleteTodo,
   DeletedTodo,
+  FailedAttachTodoImage,
   FailedCreateTodo,
   FailedDeleteTodo,
 } from '../main'
@@ -18,6 +21,7 @@ import { TodoStorageError } from '../../confect/todos.spec'
 import { errorMessage } from '../errorMessage'
 
 const todoId = S.decodeUnknownSync(TodoId)
+const imageFile = new File(['image-bytes'], 'todo.png', { type: 'image/png' })
 
 describe('todo backend commands', () => {
   test('CreateTodo succeeds through the TodosBackend service', async () => {
@@ -38,6 +42,7 @@ describe('todo backend commands', () => {
               }),
             ),
       delete: () => Effect.succeed(Option.none()),
+      uploadImage: () => Effect.succeed(Option.none()),
     })
 
     const message = await CreateTodo({ text: 'Write tests' }).effect.pipe(
@@ -64,6 +69,7 @@ describe('todo backend commands', () => {
           }),
         ),
       delete: () => Effect.succeed(Option.none()),
+      uploadImage: () => Effect.succeed(Option.none()),
     })
 
     const message = await CreateTodo({ text: 'Write tests' }).effect.pipe(
@@ -94,6 +100,7 @@ describe('todo backend commands', () => {
                 }),
               }),
             ),
+      uploadImage: () => Effect.succeed(Option.none()),
     })
 
     const message = await DeleteTodo({ id: todoId('todo-1') }).effect.pipe(
@@ -120,6 +127,7 @@ describe('todo backend commands', () => {
             }),
           }),
         ),
+      uploadImage: () => Effect.succeed(Option.none()),
     })
 
     const message = await DeleteTodo({ id: todoId('todo-1') }).effect.pipe(
@@ -129,6 +137,64 @@ describe('todo backend commands', () => {
 
     expect(message).toStrictEqual(
       FailedDeleteTodo({ error: errorMessage('Delete unavailable') }),
+    )
+  })
+
+  test('AttachTodoImage succeeds through the TodosBackend service', async () => {
+    const layer = makeTodosBackendTestLayer({
+      todos: Stream.empty,
+      create: () => Effect.succeed(todoId('todo-created')),
+      delete: () => Effect.succeed(Option.none()),
+      uploadImage: (id, file) =>
+        id === todoId('todo-1') && file.name === 'todo.png'
+          ? Effect.succeed(Option.some(id))
+          : Effect.fail(
+              new TodosBackendError({
+                operation: 'AttachTodoImage',
+                message: errorMessage('Unexpected image upload'),
+                cause: new TodoStorageError({
+                  operation: 'AttachTodoImage',
+                  message: 'unexpected image upload',
+                  userMessage: 'Unexpected image upload',
+                }),
+              }),
+            ),
+    })
+
+    const message = await AttachTodoImage({
+      id: todoId('todo-1'),
+      file: imageFile,
+    }).effect.pipe(Effect.provide(layer), Effect.runPromise)
+
+    expect(message).toStrictEqual(AttachedTodoImage())
+  })
+
+  test('AttachTodoImage turns backend failures into FailedAttachTodoImage', async () => {
+    const layer = makeTodosBackendTestLayer({
+      todos: Stream.empty,
+      create: () => Effect.succeed(todoId('todo-created')),
+      delete: () => Effect.succeed(Option.none()),
+      uploadImage: () =>
+        Effect.fail(
+          new TodosBackendError({
+            operation: 'UploadTodoImage',
+            message: errorMessage('Could not upload image.'),
+            cause: new TodoStorageError({
+              operation: 'AttachTodoImage',
+              message: 'offline',
+              userMessage: 'Could not upload image.',
+            }),
+          }),
+        ),
+    })
+
+    const message = await AttachTodoImage({
+      id: todoId('todo-1'),
+      file: imageFile,
+    }).effect.pipe(Effect.provide(layer), Effect.runPromise)
+
+    expect(message).toStrictEqual(
+      FailedAttachTodoImage({ error: errorMessage('Could not upload image.') }),
     )
   })
 })

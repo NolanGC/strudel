@@ -6,14 +6,16 @@ import {
   assertNone,
   assertSome,
 } from '@effect/vitest/utils'
-import { Effect } from 'effect'
+import { Effect, Option, Schema as S } from 'effect'
 
 import refs from '../../confect/_generated/refs'
 import { DatabaseWriter } from '../../confect/_generated/services'
 import { NotAuthenticated } from '../../confect/todos.spec'
+import { StorageId } from '../todosBackend'
 import * as TestConfect from './TestConfect'
 
 const TodoId = GenericId.GenericId('todos')
+const storageId = S.decodeUnknownSync(StorageId)('10000_storage')
 
 const userA = {
   subject: 'user-a|session-a-1',
@@ -61,6 +63,9 @@ describe('todos Confect functions', () => {
       const deleteResult = yield* c
         .mutation(refs.public.todos.deleteTodo, { id: existingTodoId })
         .pipe(Effect.result)
+      const uploadUrlResult = yield* c
+        .mutation(refs.public.todos.generateImageUploadUrl, {})
+        .pipe(Effect.result)
 
       assertFailure(
         listResult,
@@ -78,6 +83,13 @@ describe('todos Confect functions', () => {
       )
       assertFailure(
         deleteResult,
+        new NotAuthenticated({
+          message: 'No user identity found',
+          userMessage: 'Sign in to sync todos.',
+        }),
+      )
+      assertFailure(
+        uploadUrlResult,
         new NotAuthenticated({
           message: 'No user identity found',
           userMessage: 'Sign in to sync todos.',
@@ -169,6 +181,42 @@ describe('todos Confect functions', () => {
 
       assertSome(maybeDeletedId, todoId)
       assertEquals(todos, [])
+    }).pipe(Effect.provide(TestConfect.layer())),
+  )
+
+  it.effect('attaches image storage ids to owned todos', () =>
+    Effect.gen(function* () {
+      const c = yield* TestConfect.TestConfect
+      const asUserA = c.withIdentity(userA)
+      const todoId = yield* asUserA.mutation(refs.public.todos.create, {
+        text: 'Photo todo',
+      })
+
+      const maybeAttachedTodoId = yield* asUserA.mutation(
+        refs.public.todos.attachImage,
+        { id: todoId, storageId },
+      )
+      const todos = yield* asUserA.query(refs.public.todos.list, {})
+
+      assertSome(maybeAttachedTodoId, todoId)
+      assertEquals(todos.length, 1)
+      assertEquals(todos[0]?.imageStorageId, storageId)
+      assertEquals(Option.isNone(todos[0]?.maybeImageUrl ?? Option.none()), true)
+    }).pipe(Effect.provide(TestConfect.layer())),
+  )
+
+  it.effect('returns none when attaching an image to a non-owned todo', () =>
+    Effect.gen(function* () {
+      const c = yield* TestConfect.TestConfect
+      const todoId = yield* c.withIdentity(userA).mutation(refs.public.todos.create, {
+        text: 'Private photo todo',
+      })
+
+      const maybeAttachedTodoId = yield* c
+        .withIdentity(userB)
+        .mutation(refs.public.todos.attachImage, { id: todoId, storageId })
+
+      assertNone(maybeAttachedTodoId)
     }).pipe(Effect.provide(TestConfect.layer())),
   )
 

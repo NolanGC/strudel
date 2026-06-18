@@ -10,7 +10,7 @@
     "confect:install": "bun install --cwd confect",
     "confect:codegen": "confect/node_modules/.bin/confect codegen",
     "confect:dev": "confect/node_modules/.bin/confect dev",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p confect/tsconfig.json",
     "format": "prettier -w .",
     "test": "vitest run src",
     "lint": "eslint ."
@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@confect/test": "./.packs/confect-test-7.0.0.tgz",
+    "@effect/language-service": "^0.86.2",
     "@effect/vitest": "4.0.0-beta.78",
     "@eslint/js": "^10.0.1",
     "@foldkit/devtools-mcp": "^0.10.0",

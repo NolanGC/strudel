@@ -9,6 +9,8 @@ import {
   CreatedTodo,
   DeleteTodo,
   DeletedTodo,
+  AttachTodoImage,
+  AttachedTodoImage,
   FailedCreateTodo,
   FailedDeleteTodo,
   GotTodosPageMessage,
@@ -30,6 +32,7 @@ const emptyModel: Model = {
 }
 
 const todoId = S.decodeUnknownSync(TodoId)
+const imageFile = new File(['image-bytes'], 'todo.png', { type: 'image/png' })
 
 const modelWithTodos: Model = {
   ...emptyModel,
@@ -42,12 +45,14 @@ const modelWithTodos: Model = {
         _creationTime: 1000,
         ownerUserId: 'user-1',
         text: 'Buy milk',
+        maybeImageUrl: Option.some('https://example.com/milk.png'),
       },
       {
         _id: todoId('todo-2'),
         _creationTime: 2000,
         ownerUserId: 'user-1',
         text: 'Walk the dog',
+        maybeImageUrl: Option.none(),
       },
     ],
   },
@@ -72,6 +77,10 @@ describe('scene', () => {
       Scene.with(modelWithTodos),
       Scene.expect(Scene.text('Buy milk')).toExist(),
       Scene.expect(Scene.text('Walk the dog')).toExist(),
+      Scene.expect(Scene.altText('Image preview for Buy milk')).toHaveAttr(
+        'src',
+        'https://example.com/milk.png',
+      ),
       Scene.expect(Scene.role('status')).toContainText('2 todos'),
     )
   })
@@ -101,6 +110,22 @@ describe('scene', () => {
       Scene.Command.resolve(
         DeleteTodo,
         DeletedTodo(),
+        message => GotTodosPageMessage({ message }),
+      ),
+    )
+  })
+
+  test('choosing an image uploads through the Convex command', () => {
+    Scene.scene(
+      { update, view },
+      Scene.with(modelWithTodos),
+      Scene.changeFiles(Scene.label('Attach image to Walk the dog'), [
+        imageFile,
+      ]),
+      Scene.Command.expectExact(AttachTodoImage),
+      Scene.Command.resolve(
+        AttachTodoImage,
+        AttachedTodoImage(),
         message => GotTodosPageMessage({ message }),
       ),
     )

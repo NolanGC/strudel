@@ -1,4 +1,4 @@
-import { Option } from 'effect'
+import { Option, Schema as S } from 'effect'
 import { Story } from 'foldkit'
 import { describe, expect, test } from 'vitest'
 
@@ -6,6 +6,8 @@ import { AuthSignedIn } from '../authService'
 import * as AuthPanel from '../authPanel'
 import {
   AddedTodo,
+  AttachedTodoImage,
+  AttachTodoImage,
   ClickedDeleteTodo,
   CreateTodo,
   CreatedTodo,
@@ -21,8 +23,12 @@ import {
   update,
 } from '../main'
 import { TodosRoute } from '../route'
+import { TodoId } from '../todosBackend'
 import * as TodosPage from '../todosPage'
 import { errorMessage } from '../errorMessage'
+
+const todoId = S.decodeUnknownSync(TodoId)
+const imageFile = new File(['image-bytes'], 'todo.png', { type: 'image/png' })
 
 const emptyModel: Model = {
   route: TodosRoute(),
@@ -88,16 +94,18 @@ describe('update', () => {
   test('LoadedTodos replaces todos from the subscription', () => {
     const todos = [
       {
-        _id: 'todo-1',
+        _id: todoId('todo-1'),
         _creationTime: 1000,
         ownerUserId: 'user-1',
         text: 'Buy milk',
+        maybeImageUrl: Option.none(),
       },
       {
-        _id: 'todo-2',
+        _id: todoId('todo-2'),
         _creationTime: 2000,
         ownerUserId: 'user-1',
         text: 'Walk',
+        maybeImageUrl: Option.none(),
       },
     ]
 
@@ -118,7 +126,9 @@ describe('update', () => {
       update,
       Story.with(emptyModel),
       Story.message(
-        GotTodosPageMessage({ message: ClickedDeleteTodo({ id: 'todo-1' }) }),
+        GotTodosPageMessage({
+          message: ClickedDeleteTodo({ id: todoId('todo-1') }),
+        }),
       ),
       Story.Command.expectHas(DeleteTodo),
       Story.Command.resolve(
@@ -128,6 +138,53 @@ describe('update', () => {
       ),
       Story.model(model => {
         expect(model.todosPage.maybeError).toStrictEqual(Option.none())
+      }),
+    )
+  })
+
+  test('SelectedTodoImage uploads the first image file through a command', () => {
+    Story.story(
+      update,
+      Story.with(emptyModel),
+      Story.message(
+        GotTodosPageMessage({
+          message: TodosPage.SelectedTodoImage({
+            id: todoId('todo-1'),
+            files: [imageFile],
+          }),
+        }),
+      ),
+      Story.Command.expectHas(AttachTodoImage),
+      Story.Command.resolve(
+        AttachTodoImage,
+        AttachedTodoImage(),
+        message => GotTodosPageMessage({ message }),
+      ),
+      Story.model(model => {
+        expect(model.todosPage.maybeError).toStrictEqual(Option.none())
+      }),
+    )
+  })
+
+  test('SelectedTodoImage rejects non-image files before running a command', () => {
+    const textFile = new File(['text'], 'notes.txt', { type: 'text/plain' })
+
+    Story.story(
+      update,
+      Story.with(emptyModel),
+      Story.message(
+        GotTodosPageMessage({
+          message: TodosPage.SelectedTodoImage({
+            id: todoId('todo-1'),
+            files: [textFile],
+          }),
+        }),
+      ),
+      Story.Command.expectNone(),
+      Story.model(model => {
+        expect(model.todosPage.maybeError).toStrictEqual(
+          Option.some(errorMessage('Choose a PNG, JPEG, GIF, or WebP image.')),
+        )
       }),
     )
   })

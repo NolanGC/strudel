@@ -15,6 +15,10 @@ import {
   update,
   view,
 } from './main'
+import {
+  ScheduledTodosBackend,
+  ScheduledTodosBackendLive,
+} from './scheduledTodosBackend'
 import { TodosBackend, TodosBackendLive } from './todosBackend'
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL
@@ -29,7 +33,7 @@ const program = Runtime.makeProgram<
   Model,
   Message,
   Flags,
-  TodosBackend | AuthService
+  TodosBackend | AuthService | ScheduledTodosBackend
 >({
   Model,
   Flags,
@@ -45,7 +49,7 @@ const program = Runtime.makeProgram<
   },
   resources: Layer.merge(
     AuthLive,
-    TodosBackendLive.pipe(
+    Layer.merge(TodosBackendLive, ScheduledTodosBackendLive).pipe(
       Layer.provide(Layer.merge(AuthLive, WebSocketClient.layer(convexUrl))),
     ),
   ),

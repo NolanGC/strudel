@@ -3,8 +3,9 @@ import { authTables } from '@convex-dev/auth/server'
 import { defineSchema, type GenericSchema } from 'convex/server'
 
 import { Todos } from './tables/todos'
+import { ScheduledTodos } from './tables/scheduledTodos'
 
-const schema = DatabaseSchema.make().addTable(Todos)
+const schema = DatabaseSchema.make().addTable(Todos).addTable(ScheduledTodos)
 
 export default Object.assign(
   Object.create(Object.getPrototypeOf(schema)),
@@ -18,6 +19,7 @@ export default Object.assign(
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       ...(authTables as unknown as GenericSchema),
       todos: Todos.tableDefinition,
+      scheduledTodos: ScheduledTodos.tableDefinition,
     }),
   },
 )

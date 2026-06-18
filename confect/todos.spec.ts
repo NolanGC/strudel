@@ -1,9 +1,26 @@
 import { FunctionSpec, GenericId, GroupSpec } from '@confect/core'
 import { Schema } from 'effect'
 
-import { Todos } from './tables/todos'
+const TodoId = GenericId.GenericId('todos')
+const StorageId = GenericId.GenericId('_storage')
 
-const TodoOperation = Schema.Literals(['ListTodos', 'CreateTodo', 'DeleteTodo'])
+const TodoOperation = Schema.Literals([
+  'ListTodos',
+  'CreateTodo',
+  'DeleteTodo',
+  'GenerateTodoImageUploadUrl',
+  'AttachTodoImage',
+])
+
+export const Todo = Schema.Struct({
+  _id: TodoId,
+  _creationTime: Schema.Number,
+  ownerUserId: Schema.String,
+  text: Schema.String,
+  imageStorageId: Schema.optional(StorageId),
+  maybeImageUrl: Schema.OptionFromNullOr(Schema.String),
+})
+export type Todo = typeof Todo.Type
 
 export class NotAuthenticated extends Schema.TaggedErrorClass<NotAuthenticated>()(
   'NotAuthenticated',
@@ -26,7 +43,7 @@ export const todos = GroupSpec.make('todos')
     FunctionSpec.publicQuery({
       name: 'list',
       args: Schema.Struct({}),
-      returns: Schema.Array(Todos.Doc),
+      returns: Schema.Array(Todo),
       error: TodoError,
     }),
   )
@@ -34,15 +51,31 @@ export const todos = GroupSpec.make('todos')
     FunctionSpec.publicMutation({
       name: 'create',
       args: Schema.Struct({ text: Schema.String }),
-      returns: GenericId.GenericId('todos'),
+      returns: TodoId,
       error: TodoError,
     }),
   )
   .addFunction(
     FunctionSpec.publicMutation({
       name: 'deleteTodo',
-      args: Schema.Struct({ id: GenericId.GenericId('todos') }),
-      returns: Schema.OptionFromNullOr(GenericId.GenericId('todos')),
+      args: Schema.Struct({ id: TodoId }),
+      returns: Schema.OptionFromNullOr(TodoId),
+      error: TodoError,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: 'generateImageUploadUrl',
+      args: Schema.Struct({}),
+      returns: Schema.String,
+      error: TodoError,
+    }),
+  )
+  .addFunction(
+    FunctionSpec.publicMutation({
+      name: 'attachImage',
+      args: Schema.Struct({ id: TodoId, storageId: StorageId }),
+      returns: Schema.OptionFromNullOr(TodoId),
       error: TodoError,
     }),
   )

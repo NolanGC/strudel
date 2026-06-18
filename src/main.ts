@@ -10,6 +10,7 @@ import { AuthService, AuthSignedOut, AuthState } from './authService'
 import * as AuthPanel from './authPanel'
 import { ErrorMessage } from './errorMessage'
 import { AppRoute, homeRouter, todosRouter, urlToAppRoute } from './route'
+import { ScheduledTodosBackend } from './scheduledTodosBackend'
 import { TodosBackend } from './todosBackend'
 import * as TodosPage from './todosPage'
 
@@ -84,7 +85,13 @@ export const init: Runtime.RoutingProgramInit<Model, Message, Flags> = (
 
 type UpdateReturn = readonly [
   Model,
-  ReadonlyArray<Command.Command<Message, never, TodosBackend | AuthService>>,
+  ReadonlyArray<
+    Command.Command<
+      Message,
+      never,
+      TodosBackend | AuthService | ScheduledTodosBackend
+    >
+  >,
 ]
 
 const withUpdateReturn = M.withReturnType<UpdateReturn>()
@@ -248,7 +255,7 @@ export const SignOut = Command.define(
 export const subscriptions = Subscription.make<
   Model,
   Message,
-  TodosBackend | AuthService
+  TodosBackend | AuthService | ScheduledTodosBackend
 >()(entry => ({
   authState: entry(
     {},
@@ -293,6 +300,42 @@ export const subscriptions = Subscription.make<
                   Stream.succeed(
                     GotTodosPageMessage({
                       message: TodosPage.FailedLoadTodos({
+                        error: error.message,
+                      }),
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Effect.sync(() => isProtectedTodosRoute),
+        ),
+    },
+  ),
+  scheduledTodos: entry(
+    { isProtectedTodosRoute: S.Boolean },
+    {
+      modelToDependencies: model => ({
+        isProtectedTodosRoute:
+          model.route._tag === 'Todos' &&
+          model.authState._tag === 'AuthSignedIn',
+      }),
+      dependenciesToStream: ({ isProtectedTodosRoute }) =>
+        Stream.when(
+          Stream.fromEffect(ScheduledTodosBackend).pipe(
+            Stream.flatMap(backend =>
+              backend.scheduledTodos.pipe(
+                Stream.map(scheduledTodos =>
+                  GotTodosPageMessage({
+                    message: TodosPage.LoadedScheduledTodos({
+                      scheduledTodos,
+                    }),
+                  }),
+                ),
+                Stream.catch(error =>
+                  Stream.succeed(
+                    GotTodosPageMessage({
+                      message: TodosPage.FailedLoadScheduledTodos({
                         error: error.message,
                       }),
                     }),
@@ -459,14 +502,25 @@ export {
 } from './authPanel'
 export {
   AddedTodo,
+  AttachedTodoImage,
+  AttachTodoImage,
   ClickedDeleteTodo,
+  ClickedDeleteScheduledTodo,
   CreateTodo,
   CreatedTodo,
   DeleteTodo,
+  DeletedScheduledTodo,
   DeletedTodo,
+  DeleteScheduledTodo,
+  FailedAttachTodoImage,
   FailedCreateTodo,
+  FailedDeleteScheduledTodo,
   FailedDeleteTodo,
+  FailedLoadScheduledTodos,
   FailedLoadTodos,
+  GotScheduledTodoFormMessage,
+  LoadedScheduledTodos,
   LoadedTodos,
+  SelectedTodoImage,
   UpdatedNewTodo,
 } from './todosPage'
