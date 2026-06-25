@@ -9,7 +9,16 @@ import { Url, toString as urlToString } from 'foldkit/url'
 import { AuthService, AuthSignedOut, AuthState } from './authService'
 import * as AuthPanel from './authPanel'
 import { ErrorMessage } from './errorMessage'
-import { AppRoute, homeRouter, todosRouter, urlToAppRoute } from './route'
+import * as ImageUploadsPage from './page/imageUploads'
+import * as ScheduledTodosPage from './page/scheduledTodos'
+import {
+  AppRoute,
+  homeRouter,
+  imageUploadsRouter,
+  scheduledTodosRouter,
+  todosRouter,
+  urlToAppRoute,
+} from './route'
 import { ScheduledTodosBackend } from './scheduledTodosBackend'
 import { TodosBackend } from './todosBackend'
 import * as TodosPage from './todosPage'
@@ -21,6 +30,8 @@ export const Model = S.Struct({
   authState: AuthState,
   authPanel: AuthPanel.Model,
   todosPage: TodosPage.Model,
+  scheduledTodosPage: ScheduledTodosPage.Model,
+  imageUploadsPage: ImageUploadsPage.Model,
   maybeError: S.Option(ErrorMessage),
 })
 export type Model = typeof Model.Type
@@ -44,6 +55,12 @@ export const GotAuthPanelMessage = m('GotAuthPanelMessage', {
 export const GotTodosPageMessage = m('GotTodosPageMessage', {
   message: TodosPage.Message,
 })
+export const GotScheduledTodosPageMessage = m('GotScheduledTodosPageMessage', {
+  message: ScheduledTodosPage.Message,
+})
+export const GotImageUploadsPageMessage = m('GotImageUploadsPageMessage', {
+  message: ImageUploadsPage.Message,
+})
 
 export const Message = S.Union([
   CompletedNavigateInternal,
@@ -57,6 +74,8 @@ export const Message = S.Union([
   FailedSignOut,
   GotAuthPanelMessage,
   GotTodosPageMessage,
+  GotScheduledTodosPageMessage,
+  GotImageUploadsPageMessage,
 ])
 export type Message = typeof Message.Type
 
@@ -76,6 +95,8 @@ export const init: Runtime.RoutingProgramInit<Model, Message, Flags> = (
     authState: { _tag: 'AuthChecking' },
     authPanel: AuthPanel.init(),
     todosPage: TodosPage.init(),
+    scheduledTodosPage: ScheduledTodosPage.init(),
+    imageUploadsPage: ImageUploadsPage.init(),
     maybeError: Option.none(),
   },
   [],
@@ -168,6 +189,10 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
       GotTodosPageMessage: ({ message }) =>
         handleGotTodosPageMessage(model, message),
+      GotScheduledTodosPageMessage: ({ message }) =>
+        handleGotScheduledTodosPageMessage(model, message),
+      GotImageUploadsPageMessage: ({ message }) =>
+        handleGotImageUploadsPageMessage(model, message),
     }),
   )
 
@@ -186,6 +211,36 @@ const handleGotAuthPanelMessage = (
       maybeError: () => Option.none(),
     }),
     mappedCommands,
+  ]
+}
+
+const handleGotScheduledTodosPageMessage = (
+  model: Model,
+  message: ScheduledTodosPage.Message,
+): UpdateReturn => {
+  const [scheduledTodosPage, commands] = ScheduledTodosPage.update(
+    model.scheduledTodosPage,
+    message,
+  )
+  return [
+    evo(model, { scheduledTodosPage: () => scheduledTodosPage }),
+    Command.mapMessages(commands, message =>
+      GotScheduledTodosPageMessage({ message }),
+    ),
+  ]
+}
+
+const handleGotImageUploadsPageMessage = (
+  model: Model,
+  message: ImageUploadsPage.Message,
+): UpdateReturn => {
+  const [imageUploadsPage, commands] = ImageUploadsPage.update(
+    model.imageUploadsPage,
+    message,
+  )
+  return [
+    evo(model, { imageUploadsPage: () => imageUploadsPage }),
+    Command.mapMessages(commands, message => GotImageUploadsPageMessage({ message })),
   ]
 }
 
@@ -279,63 +334,59 @@ export const subscriptions = Subscription.make<
     },
   ),
   todos: entry(
-    { isProtectedTodosRoute: S.Boolean },
+    { route: AppRoute, isSignedIn: S.Boolean },
     {
       modelToDependencies: model => ({
-        isProtectedTodosRoute:
-          model.route._tag === 'Todos' &&
-          model.authState._tag === 'AuthSignedIn',
+        route: model.route,
+        isSignedIn: model.authState._tag === 'AuthSignedIn',
       }),
-      dependenciesToStream: ({ isProtectedTodosRoute }) =>
+      dependenciesToStream: ({ route, isSignedIn }) =>
         Stream.when(
           Stream.fromEffect(TodosBackend).pipe(
             Stream.flatMap(backend =>
               backend.todos.pipe(
-                Stream.map(todos =>
-                  GotTodosPageMessage({
-                    message: TodosPage.LoadedTodos({ todos }),
-                  }),
+                Stream.map(todos => route._tag === 'ImageUploads'
+                  ? GotImageUploadsPageMessage({ message: ImageUploadsPage.LoadedTodos({ todos }) })
+                  : GotTodosPageMessage({ message: TodosPage.LoadedTodos({ todos }) }),
                 ),
                 Stream.catch(error =>
                   Stream.succeed(
-                    GotTodosPageMessage({
-                      message: TodosPage.FailedLoadTodos({
-                        error: error.message,
-                      }),
-                    }),
+                    route._tag === 'ImageUploads'
+                      ? GotImageUploadsPageMessage({ message: ImageUploadsPage.FailedLoadTodos({ error: error.message }) })
+                      : GotTodosPageMessage({ message: TodosPage.FailedLoadTodos({ error: error.message }) }),
                   ),
                 ),
               ),
             ),
           ),
-          Effect.sync(() => isProtectedTodosRoute),
+          Effect.sync(() => isSignedIn && (route._tag === 'Todos' || route._tag === 'ImageUploads')),
         ),
     },
   ),
   scheduledTodos: entry(
-    { isProtectedTodosRoute: S.Boolean },
+    { isScheduledTodosRoute: S.Boolean },
     {
       modelToDependencies: model => ({
-        isProtectedTodosRoute:
-          model.route._tag === 'Todos' &&
+        isScheduledTodosRoute:
+          model.route._tag === 'ScheduledTodos' &&
           model.authState._tag === 'AuthSignedIn',
       }),
-      dependenciesToStream: ({ isProtectedTodosRoute }) =>
+      dependenciesToStream: ({ isScheduledTodosRoute }) =>
         Stream.when(
           Stream.fromEffect(ScheduledTodosBackend).pipe(
             Stream.flatMap(backend =>
               backend.scheduledTodos.pipe(
                 Stream.map(scheduledTodos =>
-                  GotTodosPageMessage({
-                    message: TodosPage.LoadedScheduledTodos({
+                  GotScheduledTodosPageMessage({
+                    message: ScheduledTodosPage.LoadedScheduledTodos({
                       scheduledTodos,
                     }),
                   }),
                 ),
                 Stream.catch(error =>
                   Stream.succeed(
-                    GotTodosPageMessage({
-                      message: TodosPage.FailedLoadScheduledTodos({
+                    GotScheduledTodosPageMessage({
+                      message: ScheduledTodosPage.FailedLoadScheduledTodos({
                         error: error.message,
                       }),
                     }),
@@ -344,7 +395,7 @@ export const subscriptions = Subscription.make<
               ),
             ),
           ),
-          Effect.sync(() => isProtectedTodosRoute),
+          Effect.sync(() => isScheduledTodosRoute),
         ),
     },
   ),
@@ -444,6 +495,55 @@ const protectedTodosView = (model: Model): Html => {
   )
 }
 
+const protectedPageView = (model: Model): Html => {
+  const h = html<Message>()
+
+  return M.value(model.authState).pipe(
+    M.tagsExhaustive({
+      AuthChecking: () => checkingAuthView(model),
+      AuthSignedOut: () =>
+        h.submodel({
+          slotId: 'auth-panel',
+          model: model.authPanel,
+          view: AuthPanel.view,
+          toParentMessage: message => GotAuthPanelMessage({ message }),
+        }),
+      AuthSignedIn: () =>
+        M.value(model.route).pipe(
+          M.tagsExhaustive({
+            Todos: () => protectedTodosView(model),
+            ScheduledTodos: () =>
+              h.submodel({
+                slotId: 'scheduled-todos-page',
+                model: model.scheduledTodosPage,
+                view: ScheduledTodosPage.view,
+                toParentMessage: message =>
+                  GotScheduledTodosPageMessage({ message }),
+              }),
+            ImageUploads: () =>
+              h.submodel({
+                slotId: 'image-uploads-page',
+                model: model.imageUploadsPage,
+                view: ImageUploadsPage.view,
+                toParentMessage: message => GotImageUploadsPageMessage({ message }),
+              }),
+            Home: () => h.empty,
+            NotFound: () => h.empty,
+          }),
+        ),
+    }),
+  )
+}
+
+const authenticatedNavigationView = (): Html => {
+  const h = html<Message>()
+  return h.nav([h.Class('mx-auto mb-4 flex max-w-3xl gap-4 text-sm')], [
+    h.a([h.Href(todosRouter({})), h.Class('text-blue-700 underline')], ['Todos']),
+    h.a([h.Href(scheduledTodosRouter({})), h.Class('text-blue-700 underline')], ['Scheduled todos']),
+    h.a([h.Href(imageUploadsRouter({})), h.Class('text-blue-700 underline')], ['Image uploads']),
+  ])
+}
+
 const notFoundView = (): Html => {
   const h = html<Message>()
 
@@ -476,7 +576,17 @@ export const view = (model: Model): Document => {
       Todos: () =>
         h.main(
           [h.Class('min-h-screen bg-gray-100 py-8')],
-          [protectedTodosView(model)],
+          [authenticatedNavigationView(), protectedPageView(model)],
+        ),
+      ScheduledTodos: () =>
+        h.main(
+          [h.Class('min-h-screen bg-gray-100 py-8')],
+          [authenticatedNavigationView(), protectedPageView(model)],
+        ),
+      ImageUploads: () =>
+        h.main(
+          [h.Class('min-h-screen bg-gray-100 py-8')],
+          [authenticatedNavigationView(), protectedPageView(model)],
         ),
       NotFound: () => notFoundView(),
     }),

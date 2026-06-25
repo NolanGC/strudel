@@ -3,7 +3,6 @@ import { makeFunctionReference } from 'convex/server'
 import { type Value } from 'convex/values'
 import {
   Context,
-  Data,
   Effect,
   Layer,
   Match as M,
@@ -39,11 +38,14 @@ const AuthOperation = S.Literals([
 ])
 type AuthOperation = typeof AuthOperation.Type
 
-export class AuthServiceError extends Data.TaggedError('AuthServiceError')<{
-  readonly operation: AuthOperation
-  readonly message: ErrorMessage
-  readonly cause: unknown
-}> {}
+export class AuthServiceError extends S.TaggedErrorClass<AuthServiceError>()(
+  'AuthServiceError',
+  {
+    operation: AuthOperation,
+    message: ErrorMessage,
+    cause: S.Defect(),
+  },
+) {}
 
 const authErrorMessage = (operation: AuthOperation): ErrorMessage =>
   M.value(operation).pipe(
@@ -412,30 +414,32 @@ export const AuthServiceConvexAuthLive = ({
           ),
         )
 
-      const signInWithGitHub: Effect.Effect<void, AuthServiceError> =
-        Effect.gen(function* () {
+      const signInWithGitHub: Effect.Effect<void, AuthServiceError> = Effect.fn(
+        'AuthService.signInWithGitHub',
+      )(function* () {
           const result = yield* authActionWithCurrentToken('SignIn', {
             provider: 'github',
             params: { redirectTo: '/todos' },
           })
 
           yield* handleSignInResult('SignIn', result)
-        })
+        })()
 
       const sendMagicLink = (
         email: string,
       ): Effect.Effect<void, AuthServiceError> =>
-        Effect.gen(function* () {
+        Effect.fn('AuthService.sendMagicLink')(function* (email: string) {
           const result = yield* authActionWithCurrentToken('SendMagicLink', {
             provider: 'resend',
             params: { email, redirectTo: '/todos' },
           })
 
           yield* handleSignInResult('SendMagicLink', result)
-        })
+        })(email)
 
-      const signOut: Effect.Effect<void, AuthServiceError> = Effect.gen(
-        function* () {
+      const signOut: Effect.Effect<void, AuthServiceError> = Effect.fn(
+        'AuthService.signOut',
+      )(function* () {
           const revokeRemoteSessionIfPossible = Effect.gen(function* () {
             yield* setClientAuthFromCurrentToken('SignOut')
             yield* signOutAction
@@ -443,8 +447,7 @@ export const AuthServiceConvexAuthLive = ({
 
           yield* revokeRemoteSessionIfPossible
           yield* setTokens('SignOut', null)
-        },
-      )
+        })()
 
       const fetchToken = ({
         forceRefreshToken,
@@ -452,9 +455,15 @@ export const AuthServiceConvexAuthLive = ({
         string | null | undefined,
         AuthServiceError
       > =>
-        forceRefreshToken
-          ? loadAuthState.pipe(Effect.andThen(refreshToken))
-          : readCurrentToken
+        Effect.fn('AuthService.fetchToken')(
+          function* ({ forceRefreshToken }: FetchTokenArgs) {
+            if (forceRefreshToken) {
+              return yield* loadAuthState.pipe(Effect.andThen(refreshToken))
+            }
+
+            return yield* readCurrentToken
+          },
+        )({ forceRefreshToken })
 
       return {
         authState: Stream.fromEffect(loadAuthState),

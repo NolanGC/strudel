@@ -1,6 +1,7 @@
 import { FunctionSpec, GenericId, GroupSpec } from '@confect/core'
 import { Schema } from 'effect'
 
+import { CronExpression, TodoText } from './domain'
 import { ScheduledTodos } from './tables/scheduledTodos'
 
 export const ScheduledTodoOperation = Schema.Literals([
@@ -52,7 +53,7 @@ export const scheduledTodos = GroupSpec.make('scheduledTodos')
   .addFunction(
     FunctionSpec.publicMutation({
       name: 'create',
-      args: Schema.Struct({ text: Schema.String, cron: Schema.String }),
+      args: Schema.Struct({ text: TodoText, cron: CronExpression }),
       returns: GenericId.GenericId('scheduledTodos'),
       error: ScheduledTodoError,
     }),

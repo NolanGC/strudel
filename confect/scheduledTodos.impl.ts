@@ -20,6 +20,7 @@ import {
   ScheduledTodoOperation,
   ScheduledTodoStorageError,
 } from './scheduledTodos.spec'
+import { CronExpression, EpochMillis, UserId } from './domain'
 import { ScheduledTodos } from './tables/scheduledTodos'
 
 type DocumentDecodeError = Document.DocumentDecodeError
@@ -44,10 +45,10 @@ const currentUserId = Effect.gen(function* () {
     }),
   )
 
-  return identity.subject.split('|')[0] ?? identity.subject
+  return UserId.make(identity.subject.split('|')[0] ?? identity.subject)
 })
 
-const cronFromString = (cron: string) =>
+const cronFromString = (cron: CronExpression) =>
   Result.match(Cron.parse(cron, 'UTC'), {
     onFailure: () =>
       Effect.fail(
@@ -63,13 +64,13 @@ const cronFromString = (cron: string) =>
 const nextRunAtFromCron = (cron: Cron.Cron) =>
   Clock.currentTimeMillis.pipe(
     Effect.map(currentTimeMillis =>
-      Cron.next(cron, new Date(currentTimeMillis)).getTime(),
+      EpochMillis.make(Cron.next(cron, new Date(currentTimeMillis)).getTime()),
     ),
   )
 
 const dateTimeFromMillis = (
   operation: ScheduledTodoOperation,
-  millis: number,
+  millis: EpochMillis,
 ) =>
   DateTime.make(millis).pipe(
     Option.match({
@@ -88,7 +89,7 @@ const dateTimeFromMillis = (
 const scheduleRun = (
   operation: ScheduledTodoOperation,
   id: typeof ScheduledTodos.Doc.Type._id,
-  nextRunAt: number,
+  nextRunAt: EpochMillis,
 ) =>
   Effect.gen(function* () {
     const scheduler = yield* Scheduler

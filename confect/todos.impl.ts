@@ -15,6 +15,7 @@ import {
   StorageReader,
   StorageWriter,
 } from './_generated/services'
+import { ImageUrl, UploadUrl, UserId } from './domain'
 import { NotAuthenticated, TodoStorageError } from './todos.spec'
 
 type DocumentDecodeError = Document.DocumentDecodeError
@@ -38,7 +39,7 @@ const currentUserId = Effect.gen(function* () {
         ),
     }),
   )
-  return identity.subject.split('|')[0] ?? identity.subject
+  return UserId.make(identity.subject.split('|')[0] ?? identity.subject)
 })
 
 const list = FunctionImpl.make(api, 'todos', 'list', () =>
@@ -73,7 +74,7 @@ const list = FunctionImpl.make(api, 'todos', 'list', () =>
           todo.imageStorageId === undefined
             ? Option.none<string>()
             : yield* storage.getUrl(todo.imageStorageId).pipe(
-                Effect.map(url => Option.some(url.toString())),
+                Effect.map(url => Option.some(ImageUrl.make(url.toString()))),
                 Effect.catchTags({
                   BlobNotFoundError: (_error: BlobNotFoundError) =>
                     Effect.succeed(Option.none<string>()),
@@ -164,7 +165,7 @@ const generateImageUploadUrl = FunctionImpl.make(
       const storage = yield* StorageWriter
 
       return yield* storage.generateUploadUrl().pipe(
-        Effect.map(url => url.toString()),
+        Effect.map(url => UploadUrl.make(url.toString())),
         Effect.mapError(
           error =>
             new TodoStorageError({

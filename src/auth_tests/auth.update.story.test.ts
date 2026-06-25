@@ -5,6 +5,8 @@ import { describe, expect, test } from 'vitest'
 import { AuthSignedIn, AuthSignedOut } from '../authService'
 import * as AuthPanel from '../authPanel'
 import * as TodosPage from '../todosPage'
+import * as ScheduledTodosPage from '../page/scheduledTodos'
+import * as ImageUploadsPage from '../page/imageUploads'
 import {
   ClickedSignInWithGitHub,
   FailedSignIn,
@@ -26,6 +28,8 @@ const signedOutModel: Model = {
   authState: AuthSignedOut(),
   authPanel: AuthPanel.init(),
   todosPage: TodosPage.init(),
+  scheduledTodosPage: ScheduledTodosPage.init(),
+  imageUploadsPage: ImageUploadsPage.init(),
   maybeError: Option.none(),
 }
 

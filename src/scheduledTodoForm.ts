@@ -5,6 +5,7 @@ import { m } from 'foldkit/message'
 import { evo } from 'foldkit/struct'
 
 import { ErrorMessage, errorMessage } from './errorMessage'
+import { CronExpression, TodoText } from '../confect/domain'
 import {
   ScheduledTodoId,
   ScheduledTodosBackend,
@@ -13,8 +14,8 @@ import {
 // MODEL
 
 const PendingSubmission = S.Struct({
-  text: S.String,
-  cron: S.String,
+  text: TodoText,
+  cron: CronExpression,
 })
 type PendingSubmission = typeof PendingSubmission.Type
 
@@ -116,15 +117,19 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           ]
         }
 
+        const todoText = TodoText.make(text)
+        const cronExpression = CronExpression.make(cron)
+
         return [
           evo(model, {
             text: () => '',
             cron: () => '',
             maybeNotice: () => Option.none(),
             maybeError: () => Option.none(),
-            maybePendingSubmission: () => Option.some({ text, cron }),
+            maybePendingSubmission: () =>
+              Option.some({ text: todoText, cron: cronExpression }),
           }),
-          [CreateScheduledTodo({ text, cron })],
+          [CreateScheduledTodo({ text: todoText, cron: cronExpression })],
         ]
       },
 
@@ -175,7 +180,7 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 
 export const CreateScheduledTodo = Command.define(
   'CreateScheduledTodo',
-  { text: S.String, cron: S.String },
+  { text: TodoText, cron: CronExpression },
   CreatedScheduledTodo,
   FailedCreateScheduledTodo,
 )(({ text, cron }) =>

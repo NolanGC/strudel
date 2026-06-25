@@ -2,6 +2,7 @@ import { Effect, Option, Schema as S, Stream } from 'effect'
 import { describe, expect, test } from 'vitest'
 
 import { errorMessage } from '../errorMessage'
+import { CronExpression, TodoText } from '../../confect/domain'
 import { DeleteScheduledTodo, DeletedScheduledTodo } from '../main'
 import {
   CreateScheduledTodo,
@@ -15,13 +16,15 @@ import {
 } from '../scheduledTodosBackend'
 
 const scheduledTodoId = S.decodeUnknownSync(ScheduledTodoId)('scheduled-todo-1')
+const cronExpression = CronExpression.make
+const todoText = TodoText.make
 
 describe('scheduled todo form commands', () => {
   test('CreateScheduledTodo calls the scheduled todos backend with text and cron', async () => {
     const layer = makeScheduledTodosBackendTestLayer({
       scheduledTodos: Stream.empty,
       create: ({ text, cron }) =>
-        text === 'gym' && cron === '0 7 * * *'
+        text === todoText('gym') && cron === cronExpression('0 7 * * *')
           ? Effect.succeed(scheduledTodoId)
           : Effect.fail(
               new ScheduledTodosBackendError({
@@ -34,8 +37,8 @@ describe('scheduled todo form commands', () => {
     })
 
     const message = await CreateScheduledTodo({
-      text: 'gym',
-      cron: '0 7 * * *',
+      text: todoText('gym'),
+      cron: cronExpression('0 7 * * *'),
     }).effect.pipe(Effect.provide(layer), Effect.runPromise)
 
     expect(message).toStrictEqual(
@@ -58,8 +61,8 @@ describe('scheduled todo form commands', () => {
     })
 
     const message = await CreateScheduledTodo({
-      text: 'gym',
-      cron: 'not cron',
+      text: todoText('gym'),
+      cron: cronExpression('not cron'),
     }).effect.pipe(Effect.provide(layer), Effect.runPromise)
 
     expect(message).toStrictEqual(

@@ -6,6 +6,7 @@ import { m } from 'foldkit/message'
 import { evo } from 'foldkit/struct'
 
 import { AuthService } from './authService'
+import { TodoText } from '../confect/domain'
 import { ErrorMessage, errorMessage } from './errorMessage'
 import {
   ScheduledTodo,
@@ -140,12 +141,14 @@ export const update = (model: Model, message: Message): UpdateReturn =>
           return [model, [], Option.none()]
         }
 
+        const todoText = TodoText.make(text)
+
         return [
           evo(model, {
             newTodoText: () => '',
             maybeError: () => Option.none(),
           }),
-          [CreateTodo({ text })],
+          [CreateTodo({ text: todoText })],
           Option.none(),
         ]
       },
@@ -289,7 +292,7 @@ const handleGotScheduledTodoFormMessage = (
 
 export const CreateTodo = Command.define(
   'CreateTodo',
-  { text: S.String },
+  { text: TodoText },
   CreatedTodo,
   FailedCreateTodo,
 )(({ text }) =>

@@ -25,9 +25,14 @@ import {
 import { TodosRoute } from '../route'
 import { TodoId } from '../todosBackend'
 import * as TodosPage from '../todosPage'
+import * as ScheduledTodosPage from '../page/scheduledTodos'
+import * as ImageUploadsPage from '../page/imageUploads'
 import { errorMessage } from '../errorMessage'
+import { TodoText, UserId } from '../../confect/domain'
 
 const todoId = S.decodeUnknownSync(TodoId)
+const todoText = TodoText.make
+const userId = UserId.make
 const imageFile = new File(['image-bytes'], 'todo.png', { type: 'image/png' })
 
 const emptyModel: Model = {
@@ -35,6 +40,8 @@ const emptyModel: Model = {
   authState: AuthSignedIn({ session: { displayName: 'Nolan' } }),
   authPanel: AuthPanel.init(),
   todosPage: TodosPage.init(),
+  scheduledTodosPage: ScheduledTodosPage.init(),
+  imageUploadsPage: ImageUploadsPage.init(),
   maybeError: Option.none(),
 }
 
@@ -96,15 +103,15 @@ describe('update', () => {
       {
         _id: todoId('todo-1'),
         _creationTime: 1000,
-        ownerUserId: 'user-1',
-        text: 'Buy milk',
+        ownerUserId: userId('user-1'),
+        text: todoText('Buy milk'),
         maybeImageUrl: Option.none(),
       },
       {
         _id: todoId('todo-2'),
         _creationTime: 2000,
-        ownerUserId: 'user-1',
-        text: 'Walk',
+        ownerUserId: userId('user-1'),
+        text: todoText('Walk'),
         maybeImageUrl: Option.none(),
       },
     ]

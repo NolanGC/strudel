@@ -17,10 +17,12 @@ import {
   TodosBackendError,
   makeTodosBackendTestLayer,
 } from '../todosBackend'
+import { TodoText } from '../../confect/domain'
 import { TodoStorageError } from '../../confect/todos.spec'
 import { errorMessage } from '../errorMessage'
 
 const todoId = S.decodeUnknownSync(TodoId)
+const todoText = TodoText.make
 const imageFile = new File(['image-bytes'], 'todo.png', { type: 'image/png' })
 
 describe('todo backend commands', () => {
@@ -28,7 +30,7 @@ describe('todo backend commands', () => {
     const layer = makeTodosBackendTestLayer({
       todos: Stream.empty,
       create: text =>
-        text === 'Write tests'
+        text === todoText('Write tests')
           ? Effect.succeed(todoId('todo-created'))
           : Effect.fail(
               new TodosBackendError({
@@ -45,7 +47,7 @@ describe('todo backend commands', () => {
       uploadImage: () => Effect.succeed(Option.none()),
     })
 
-    const message = await CreateTodo({ text: 'Write tests' }).effect.pipe(
+    const message = await CreateTodo({ text: todoText('Write tests') }).effect.pipe(
       Effect.provide(layer),
       Effect.runPromise,
     )
@@ -72,7 +74,7 @@ describe('todo backend commands', () => {
       uploadImage: () => Effect.succeed(Option.none()),
     })
 
-    const message = await CreateTodo({ text: 'Write tests' }).effect.pipe(
+    const message = await CreateTodo({ text: todoText('Write tests') }).effect.pipe(
       Effect.provide(layer),
       Effect.runPromise,
     )

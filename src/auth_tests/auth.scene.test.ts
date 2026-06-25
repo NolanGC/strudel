@@ -18,12 +18,16 @@ import {
 } from '../main'
 import { HomeRoute, TodosRoute } from '../route'
 import * as TodosPage from '../todosPage'
+import * as ScheduledTodosPage from '../page/scheduledTodos'
+import * as ImageUploadsPage from '../page/imageUploads'
 
 const signedOutTodosModel: Model = {
   route: TodosRoute(),
   authState: AuthSignedOut(),
   authPanel: AuthPanel.init(),
   todosPage: TodosPage.init(),
+  scheduledTodosPage: ScheduledTodosPage.init(),
+  imageUploadsPage: ImageUploadsPage.init(),
   maybeError: Option.none(),
 }
 

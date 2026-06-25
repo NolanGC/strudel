@@ -10,12 +10,15 @@ import { Effect, Option, Schema as S } from 'effect'
 
 import refs from '../../confect/_generated/refs'
 import { DatabaseWriter } from '../../confect/_generated/services'
+import { TodoText, UserId } from '../../confect/domain'
 import { NotAuthenticated } from '../../confect/todos.spec'
 import { StorageId } from '../todosBackend'
 import * as TestConfect from './TestConfect'
 
 const TodoId = GenericId.GenericId('todos')
 const storageId = S.decodeUnknownSync(StorageId)('10000_storage')
+const todoText = TodoText.make
+const userId = UserId.make
 
 const userA = {
   subject: 'user-a|session-a-1',
@@ -47,8 +50,8 @@ describe('todos Confect functions', () => {
           const writer = yield* DatabaseWriter
 
           return yield* writer.table('todos').insert({
-            ownerUserId: userA.userId,
-            text: 'Seeded todo',
+            ownerUserId: userId(userA.userId),
+            text: todoText('Seeded todo'),
           })
         }),
         TodoId,
@@ -58,7 +61,7 @@ describe('todos Confect functions', () => {
         .query(refs.public.todos.list, {})
         .pipe(Effect.result)
       const createResult = yield* c
-        .mutation(refs.public.todos.create, { text: 'Write tests' })
+        .mutation(refs.public.todos.create, { text: todoText('Write tests') })
         .pipe(Effect.result)
       const deleteResult = yield* c
         .mutation(refs.public.todos.deleteTodo, { id: existingTodoId })
@@ -104,7 +107,7 @@ describe('todos Confect functions', () => {
       const asUserA = c.withIdentity(userA)
 
       const todoId = yield* asUserA.mutation(refs.public.todos.create, {
-        text: 'Write tests',
+        text: todoText('Write tests'),
       })
 
       const todos = yield* asUserA.query(refs.public.todos.list, {})
@@ -121,7 +124,7 @@ describe('todos Confect functions', () => {
       const c = yield* TestConfect.TestConfect
 
       yield* c.withIdentity(userA).mutation(refs.public.todos.create, {
-        text: 'Persistent todo',
+        text: todoText('Persistent todo'),
       })
 
       const todos = yield* c
@@ -140,10 +143,10 @@ describe('todos Confect functions', () => {
       const c = yield* TestConfect.TestConfect
 
       yield* c.withIdentity(userA).mutation(refs.public.todos.create, {
-        text: 'A todo',
+        text: todoText('A todo'),
       })
       yield* c.withIdentity(userB).mutation(refs.public.todos.create, {
-        text: 'B todo',
+        text: todoText('B todo'),
       })
 
       const userATodos = yield* c
@@ -170,7 +173,7 @@ describe('todos Confect functions', () => {
       const asUserA = c.withIdentity(userA)
 
       const todoId = yield* asUserA.mutation(refs.public.todos.create, {
-        text: 'Delete me',
+        text: todoText('Delete me'),
       })
 
       const maybeDeletedId = yield* asUserA.mutation(
@@ -189,7 +192,7 @@ describe('todos Confect functions', () => {
       const c = yield* TestConfect.TestConfect
       const asUserA = c.withIdentity(userA)
       const todoId = yield* asUserA.mutation(refs.public.todos.create, {
-        text: 'Photo todo',
+        text: todoText('Photo todo'),
       })
 
       const maybeAttachedTodoId = yield* asUserA.mutation(
@@ -209,7 +212,7 @@ describe('todos Confect functions', () => {
     Effect.gen(function* () {
       const c = yield* TestConfect.TestConfect
       const todoId = yield* c.withIdentity(userA).mutation(refs.public.todos.create, {
-        text: 'Private photo todo',
+        text: todoText('Private photo todo'),
       })
 
       const maybeAttachedTodoId = yield* c
@@ -226,13 +229,13 @@ describe('todos Confect functions', () => {
 
       const deletedTodoId = yield* c
         .withIdentity(userA)
-        .mutation(refs.public.todos.create, { text: 'Deleted todo' })
+        .mutation(refs.public.todos.create, { text: todoText('Deleted todo') })
       yield* c
         .withIdentity(userA)
         .mutation(refs.public.todos.deleteTodo, { id: deletedTodoId })
       const userATodoId = yield* c
         .withIdentity(userA)
-        .mutation(refs.public.todos.create, { text: 'A todo' })
+        .mutation(refs.public.todos.create, { text: todoText('A todo') })
 
       const missingDelete = yield* c
         .withIdentity(userA)
@@ -260,8 +263,8 @@ describe('todos Confect functions', () => {
           const writer = yield* DatabaseWriter
 
           return yield* writer.table('todos').insert({
-            ownerUserId: userA.userId,
-            text: 'Seeded todo',
+            ownerUserId: userId(userA.userId),
+            text: todoText('Seeded todo'),
           })
         }),
         TodoId,

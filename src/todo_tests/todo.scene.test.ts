@@ -21,17 +21,25 @@ import {
 import { TodosRoute } from '../route'
 import { TodoId } from '../todosBackend'
 import * as TodosPage from '../todosPage'
+import * as ScheduledTodosPage from '../page/scheduledTodos'
+import * as ImageUploadsPage from '../page/imageUploads'
 import { errorMessage } from '../errorMessage'
+import { ImageUrl, TodoText, UserId } from '../../confect/domain'
 
 const emptyModel: Model = {
   route: TodosRoute(),
   authState: AuthSignedIn({ session: { displayName: 'Nolan' } }),
   authPanel: AuthPanel.init(),
   todosPage: TodosPage.init(),
+  scheduledTodosPage: ScheduledTodosPage.init(),
+  imageUploadsPage: ImageUploadsPage.init(),
   maybeError: Option.none(),
 }
 
 const todoId = S.decodeUnknownSync(TodoId)
+const imageUrl = ImageUrl.make
+const todoText = TodoText.make
+const userId = UserId.make
 const imageFile = new File(['image-bytes'], 'todo.png', { type: 'image/png' })
 
 const modelWithTodos: Model = {
@@ -43,15 +51,15 @@ const modelWithTodos: Model = {
       {
         _id: todoId('todo-1'),
         _creationTime: 1000,
-        ownerUserId: 'user-1',
-        text: 'Buy milk',
-        maybeImageUrl: Option.some('https://example.com/milk.png'),
+        ownerUserId: userId('user-1'),
+        text: todoText('Buy milk'),
+        maybeImageUrl: Option.some(imageUrl('https://example.com/milk.png')),
       },
       {
         _id: todoId('todo-2'),
         _creationTime: 2000,
-        ownerUserId: 'user-1',
-        text: 'Walk the dog',
+        ownerUserId: userId('user-1'),
+        text: todoText('Walk the dog'),
         maybeImageUrl: Option.none(),
       },
     ],

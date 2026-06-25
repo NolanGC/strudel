@@ -1,6 +1,8 @@
 import { FunctionSpec, GenericId, GroupSpec } from '@confect/core'
 import { Schema } from 'effect'
 
+import { ImageUrl, TodoText, UploadUrl, UserId } from './domain'
+
 const TodoId = GenericId.GenericId('todos')
 const StorageId = GenericId.GenericId('_storage')
 
@@ -15,10 +17,10 @@ const TodoOperation = Schema.Literals([
 export const Todo = Schema.Struct({
   _id: TodoId,
   _creationTime: Schema.Number,
-  ownerUserId: Schema.String,
-  text: Schema.String,
+  ownerUserId: UserId,
+  text: TodoText,
   imageStorageId: Schema.optional(StorageId),
-  maybeImageUrl: Schema.OptionFromNullOr(Schema.String),
+  maybeImageUrl: Schema.OptionFromNullOr(ImageUrl),
 })
 export type Todo = typeof Todo.Type
 
@@ -50,7 +52,7 @@ export const todos = GroupSpec.make('todos')
   .addFunction(
     FunctionSpec.publicMutation({
       name: 'create',
-      args: Schema.Struct({ text: Schema.String }),
+      args: Schema.Struct({ text: TodoText }),
       returns: TodoId,
       error: TodoError,
     }),
@@ -67,7 +69,7 @@ export const todos = GroupSpec.make('todos')
     FunctionSpec.publicMutation({
       name: 'generateImageUploadUrl',
       args: Schema.Struct({}),
-      returns: Schema.String,
+      returns: UploadUrl,
       error: TodoError,
     }),
   )

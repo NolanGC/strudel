@@ -19,6 +19,8 @@ import {
 } from '../scheduledTodoForm'
 import { ScheduledTodoId } from '../scheduledTodosBackend'
 import * as TodosPage from '../todosPage'
+import * as ScheduledTodosPage from '../page/scheduledTodos'
+import * as ImageUploadsPage from '../page/imageUploads'
 import { errorMessage } from '../errorMessage'
 
 const scheduledTodoId = S.decodeUnknownSync(ScheduledTodoId)('scheduled-todo-1')
@@ -28,6 +30,8 @@ const signedInModel: Model = {
   authState: AuthSignedIn({ session: { displayName: 'Nolan' } }),
   authPanel: AuthPanel.init(),
   todosPage: TodosPage.init(),
+  scheduledTodosPage: ScheduledTodosPage.init(),
+  imageUploadsPage: ImageUploadsPage.init(),
   maybeError: Option.none(),
 }
 

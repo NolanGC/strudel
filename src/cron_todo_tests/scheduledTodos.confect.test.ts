@@ -9,11 +9,15 @@ import { Effect } from 'effect'
 import { vi } from 'vitest'
 
 import refs from '../../confect/_generated/refs'
+import { CronExpression, TodoText } from '../../confect/domain'
 import {
   InvalidCronExpression,
   NotAuthenticated,
 } from '../../confect/scheduledTodos.spec'
 import * as TestConfect from '../todo_tests/TestConfect'
+
+const cronExpression = CronExpression.make
+const todoText = TodoText.make
 
 const userA = {
   subject: 'user-a|session-a-1',
@@ -36,8 +40,8 @@ describe('scheduled todo Confect functions', () => {
 
       const result = yield* c
         .mutation(refs.public.scheduledTodos.create, {
-          text: 'gym',
-          cron: '0 7 * * *',
+          text: todoText('gym'),
+          cron: cronExpression('0 7 * * *'),
         })
         .pipe(Effect.result)
 
@@ -58,8 +62,8 @@ describe('scheduled todo Confect functions', () => {
       const result = yield* c
         .withIdentity(userA)
         .mutation(refs.public.scheduledTodos.create, {
-          text: 'gym',
-          cron: 'not cron',
+          text: todoText('gym'),
+          cron: cronExpression('not cron'),
         })
         .pipe(Effect.result)
 
@@ -81,8 +85,8 @@ describe('scheduled todo Confect functions', () => {
       const scheduledTodoId = yield* c
         .withIdentity(userA)
         .mutation(refs.public.scheduledTodos.create, {
-          text: 'gym',
-          cron: '0 7 * * *',
+          text: todoText('gym'),
+          cron: cronExpression('0 7 * * *'),
         })
 
       const schedules = yield* c
@@ -103,12 +107,12 @@ describe('scheduled todo Confect functions', () => {
       const c = yield* TestConfect.TestConfect
 
       yield* c.withIdentity(userA).mutation(refs.public.scheduledTodos.create, {
-        text: 'gym',
-        cron: '0 7 * * *',
+        text: todoText('gym'),
+        cron: cronExpression('0 7 * * *'),
       })
       yield* c.withIdentity(userB).mutation(refs.public.scheduledTodos.create, {
-        text: 'water plants',
-        cron: '0 9 * * *',
+        text: todoText('water plants'),
+        cron: cronExpression('0 9 * * *'),
       })
 
       const userASchedules = yield* c
@@ -137,8 +141,8 @@ describe('scheduled todo Confect functions', () => {
       const scheduledTodoId = yield* asUserA.mutation(
         refs.public.scheduledTodos.create,
         {
-          text: 'gym',
-          cron: '0 7 * * *',
+          text: todoText('gym'),
+          cron: cronExpression('0 7 * * *'),
         },
       )
 
@@ -159,8 +163,8 @@ describe('scheduled todo Confect functions', () => {
       const scheduledTodoId = yield* c
         .withIdentity(userA)
         .mutation(refs.public.scheduledTodos.create, {
-          text: 'gym',
-          cron: '0 7 * * *',
+          text: todoText('gym'),
+          cron: cronExpression('0 7 * * *'),
         })
 
       const nonOwnedDelete = yield* c
@@ -195,8 +199,8 @@ describe('scheduled todo Confect functions', () => {
       const scheduledTodoId = yield* asUserA.mutation(
         refs.public.scheduledTodos.create,
         {
-          text: 'gym',
-          cron: '0 7 * * *',
+          text: todoText('gym'),
+          cron: cronExpression('0 7 * * *'),
         },
       )
 
@@ -228,8 +232,8 @@ describe('scheduled todo Confect functions', () => {
       const scheduledTodoId = yield* asUserA.mutation(
         refs.public.scheduledTodos.create,
         {
-          text: 'gym',
-          cron: '0 7 * * *',
+          text: todoText('gym'),
+          cron: cronExpression('0 7 * * *'),
         },
       )
 

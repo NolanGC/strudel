@@ -1,12 +1,14 @@
 import { Table } from '@confect/server'
 import { Schema } from 'effect'
 
+import { CronExpression, EpochMillis, TodoText, UserId } from '../domain'
+
 export const ScheduledTodos = Table.make(
   'scheduledTodos',
   Schema.Struct({
-    ownerUserId: Schema.String,
-    text: Schema.String,
-    cron: Schema.String,
-    nextRunAt: Schema.Number,
+    ownerUserId: UserId,
+    text: TodoText,
+    cron: CronExpression,
+    nextRunAt: EpochMillis,
   }),
 ).index('by_ownerUserId', ['ownerUserId'])

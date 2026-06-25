@@ -2,7 +2,6 @@ import { GenericId } from '@confect/core'
 import { WebSocketClient } from '@confect/js'
 import {
   Context,
-  Data,
   Effect,
   Layer,
   Match as M,
@@ -12,6 +11,7 @@ import {
 } from 'effect'
 
 import refs from '../confect/_generated/refs'
+import { CronExpression, TodoText } from '../confect/domain'
 import {
   InvalidCronExpression,
   NotAuthenticated,
@@ -42,13 +42,14 @@ type ScheduledTodosBackendCause =
   | WebSocketClient.WebSocketClientError
   | S.SchemaError
 
-export class ScheduledTodosBackendError extends Data.TaggedError(
+export class ScheduledTodosBackendError extends S.TaggedErrorClass<ScheduledTodosBackendError>()(
   'ScheduledTodosBackendError',
-)<{
-  readonly operation: ScheduledTodosBackendOperation
-  readonly message: ErrorMessage
-  readonly cause: unknown
-}> {}
+  {
+    operation: ScheduledTodosBackendOperation,
+    message: ErrorMessage,
+    cause: S.Unknown,
+  },
+) {}
 
 const scheduledTodosBackendMessage = (
   error: ScheduledTodosBackendCause,
@@ -80,8 +81,8 @@ type ScheduledTodosBackendShape = {
     ScheduledTodosBackendError
   >
   readonly create: (args: {
-    readonly text: string
-    readonly cron: string
+    readonly text: TodoText
+    readonly cron: CronExpression
   }) => Effect.Effect<ScheduledTodoId, ScheduledTodosBackendError>
   readonly delete: (
     id: ScheduledTodoId,
@@ -100,7 +101,7 @@ export const ScheduledTodosBackendLive = Layer.effect(
     const auth = yield* AuthService
 
     const authenticate = confect.setAuth(args =>
-      auth.fetchToken(args).pipe(Effect.catch(() => Effect.succeed(null))),
+      auth.fetchToken(args).pipe(Effect.orDie),
     )
 
     yield* authenticate
@@ -112,7 +113,7 @@ export const ScheduledTodosBackendLive = Layer.effect(
         ),
         Stream.mapError(toBackendError('ListScheduledTodos')),
       ),
-      create: ({ text, cron }) =>
+      create: Effect.fn('ScheduledTodosBackend.create')(({ text, cron }) =>
         authenticate.pipe(
           Effect.flatMap(() =>
             confect.mutation(refs.public.scheduledTodos.create, {
@@ -122,15 +123,18 @@ export const ScheduledTodosBackendLive = Layer.effect(
           ),
           Effect.mapError(toBackendError('CreateScheduledTodo')),
         ),
-      delete: (id: ScheduledTodoId) =>
-        authenticate.pipe(
-          Effect.flatMap(() =>
-            confect.mutation(refs.public.scheduledTodos.deleteScheduledTodo, {
-              id,
-            }),
+      ),
+      delete: Effect.fn('ScheduledTodosBackend.delete')(
+        (id: ScheduledTodoId) =>
+          authenticate.pipe(
+            Effect.flatMap(() =>
+              confect.mutation(refs.public.scheduledTodos.deleteScheduledTodo, {
+                id,
+              }),
+            ),
+            Effect.mapError(toBackendError('DeleteScheduledTodo')),
           ),
-          Effect.mapError(toBackendError('DeleteScheduledTodo')),
-        ),
+      ),
     } satisfies ScheduledTodosBackendShape
   }),
 )
