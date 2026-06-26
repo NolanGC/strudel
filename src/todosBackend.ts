@@ -87,7 +87,7 @@ const toBackendError =
       cause,
     })
 
-type TodosBackendShape = {
+export type TodosBackendShape = {
   readonly todos: Stream.Stream<ReadonlyArray<Todo>, TodosBackendError>
   readonly create: (
     text: TodoText,

@@ -1,11 +1,8 @@
-import { Effect, Stream } from 'effect'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, it } from '@effect/vitest'
+import { Effect } from 'effect'
 
-import {
-  AuthServiceError,
-  AuthSignedOut,
-  makeAuthServiceTestLayer,
-} from '../authService'
+import { AuthServiceError } from '../authService'
+import { errorMessage } from '../errorMessage'
 import {
   FailedSignIn,
   FailedSignOut,
@@ -16,90 +13,121 @@ import {
   SucceededSignOut,
   SucceededStartedGitHubSignIn,
 } from '../main'
-import { errorMessage } from '../errorMessage'
-
-const authLayer = makeAuthServiceTestLayer({
-  authState: Stream.succeed(AuthSignedOut()),
-  signInWithGitHub: Effect.void,
-  sendMagicLink: () => Effect.void,
-  signOut: Effect.void,
-  fetchToken: () => Effect.succeed(null),
-})
+import { makeAuthServiceTestHarness } from '../test_support/serviceLayers'
 
 describe('auth commands', () => {
-  test('SignInWithGitHub succeeds through the AuthService layer', async () => {
-    const message = await SignInWithGitHub().effect.pipe(
-      Effect.provide(authLayer),
-      Effect.runPromise,
-    )
+  it.effect('SignInWithGitHub succeeds through the AuthService layer', () =>
+    Effect.gen(function* () {
+      const auth = makeAuthServiceTestHarness({
+        signInWithGitHub: Effect.void,
+      })
 
-    expect(message).toStrictEqual(SucceededStartedGitHubSignIn())
-  })
+      const message = yield* SignInWithGitHub().effect.pipe(
+        Effect.provide(auth.layer),
+      )
 
-  test('SendMagicLink succeeds through the AuthService layer', async () => {
-    const message = await SendMagicLink({
-      email: 'nolan@example.com',
-    }).effect.pipe(Effect.provide(authLayer), Effect.runPromise)
+      expect(message).toStrictEqual(SucceededStartedGitHubSignIn())
+      expect(yield* auth.calls).toStrictEqual([{ _tag: 'SignInWithGitHub' }])
+    }),
+  )
 
-    expect(message).toStrictEqual(SentMagicLink())
-  })
+  it.effect('SendMagicLink succeeds through the AuthService layer', () =>
+    Effect.gen(function* () {
+      const auth = makeAuthServiceTestHarness({
+        sendMagicLink: () => Effect.void,
+      })
 
-  test('SignInWithGitHub turns service failures into FailedSignIn', async () => {
-    const layer = makeAuthServiceTestLayer({
-      authState: Stream.succeed(AuthSignedOut()),
-      signInWithGitHub: Effect.fail(
-        new AuthServiceError({
-          operation: 'SignIn',
-          message: errorMessage('Auth unavailable'),
-          cause: 'offline',
-        }),
-      ),
-      sendMagicLink: () => Effect.void,
-      signOut: Effect.void,
-      fetchToken: () => Effect.succeed(null),
-    })
+      const message = yield* SendMagicLink({
+        email: 'nolan@example.com',
+      }).effect.pipe(Effect.provide(auth.layer))
 
-    const message = await SignInWithGitHub().effect.pipe(
-      Effect.provide(layer),
-      Effect.runPromise,
-    )
+      expect(message).toStrictEqual(SentMagicLink())
+      expect(yield* auth.calls).toStrictEqual([
+        { _tag: 'SendMagicLink', email: 'nolan@example.com' },
+      ])
+    }),
+  )
 
-    expect(message).toStrictEqual(
-      FailedSignIn({ error: errorMessage('Auth unavailable') }),
-    )
-  })
+  it.effect('SignInWithGitHub turns service failures into FailedSignIn', () =>
+    Effect.gen(function* () {
+      const auth = makeAuthServiceTestHarness({
+        signInWithGitHub: Effect.fail(
+          new AuthServiceError({
+            operation: 'SignIn',
+            message: errorMessage('Auth unavailable'),
+            cause: 'offline',
+          }),
+        ),
+      })
 
-  test('SignOut succeeds through the AuthService layer', async () => {
-    const message = await SignOut().effect.pipe(
-      Effect.provide(authLayer),
-      Effect.runPromise,
-    )
+      const message = yield* SignInWithGitHub().effect.pipe(
+        Effect.provide(auth.layer),
+      )
 
-    expect(message).toStrictEqual(SucceededSignOut())
-  })
+      expect(message).toStrictEqual(
+        FailedSignIn({ error: errorMessage('Auth unavailable') }),
+      )
+      expect(yield* auth.calls).toStrictEqual([{ _tag: 'SignInWithGitHub' }])
+    }),
+  )
 
-  test('SignOut turns service failures into FailedSignOut', async () => {
-    const layer = makeAuthServiceTestLayer({
-      authState: Stream.succeed(AuthSignedOut()),
-      signInWithGitHub: Effect.void,
-      sendMagicLink: () => Effect.void,
-      signOut: Effect.fail(
-        new AuthServiceError({
-          operation: 'SignOut',
-          message: errorMessage('Sign out failed'),
-          cause: 'offline',
-        }),
-      ),
-      fetchToken: () => Effect.succeed(null),
-    })
+  it.effect('SendMagicLink turns service failures into FailedSignIn', () =>
+    Effect.gen(function* () {
+      const auth = makeAuthServiceTestHarness({
+        sendMagicLink: () =>
+          Effect.fail(
+            new AuthServiceError({
+              operation: 'SendMagicLink',
+              message: errorMessage('Magic link failed'),
+              cause: 'offline',
+            }),
+          ),
+      })
 
-    const message = await SignOut().effect.pipe(
-      Effect.provide(layer),
-      Effect.runPromise,
-    )
+      const message = yield* SendMagicLink({
+        email: 'nolan@example.com',
+      }).effect.pipe(Effect.provide(auth.layer))
 
-    expect(message).toStrictEqual(
-      FailedSignOut({ error: errorMessage('Sign out failed') }),
-    )
-  })
+      expect(message).toStrictEqual(
+        FailedSignIn({ error: errorMessage('Magic link failed') }),
+      )
+      expect(yield* auth.calls).toStrictEqual([
+        { _tag: 'SendMagicLink', email: 'nolan@example.com' },
+      ])
+    }),
+  )
+
+  it.effect('SignOut succeeds through the AuthService layer', () =>
+    Effect.gen(function* () {
+      const auth = makeAuthServiceTestHarness({
+        signOut: Effect.void,
+      })
+
+      const message = yield* SignOut().effect.pipe(Effect.provide(auth.layer))
+
+      expect(message).toStrictEqual(SucceededSignOut())
+      expect(yield* auth.calls).toStrictEqual([{ _tag: 'SignOut' }])
+    }),
+  )
+
+  it.effect('SignOut turns service failures into FailedSignOut', () =>
+    Effect.gen(function* () {
+      const auth = makeAuthServiceTestHarness({
+        signOut: Effect.fail(
+          new AuthServiceError({
+            operation: 'SignOut',
+            message: errorMessage('Sign out failed'),
+            cause: 'offline',
+          }),
+        ),
+      })
+
+      const message = yield* SignOut().effect.pipe(Effect.provide(auth.layer))
+
+      expect(message).toStrictEqual(
+        FailedSignOut({ error: errorMessage('Sign out failed') }),
+      )
+      expect(yield* auth.calls).toStrictEqual([{ _tag: 'SignOut' }])
+    }),
+  )
 })

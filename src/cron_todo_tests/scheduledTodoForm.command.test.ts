@@ -1,8 +1,8 @@
-import { Effect, Option, Schema as S, Stream } from 'effect'
-import { describe, expect, test } from 'vitest'
+import { describe, expect, it } from '@effect/vitest'
+import { Effect, Option, Schema as S } from 'effect'
 
-import { errorMessage } from '../errorMessage'
 import { CronExpression, TodoText } from '../../confect/domain'
+import { errorMessage } from '../errorMessage'
 import { DeleteScheduledTodo, DeletedScheduledTodo } from '../main'
 import {
   CreateScheduledTodo,
@@ -10,88 +10,134 @@ import {
   FailedCreateScheduledTodo,
 } from '../scheduledTodoForm'
 import {
-  ScheduledTodosBackendError,
   ScheduledTodoId,
-  makeScheduledTodosBackendTestLayer,
+  ScheduledTodosBackendError,
 } from '../scheduledTodosBackend'
+import { makeScheduledTodosBackendTestHarness } from '../test_support/serviceLayers'
+import { FailedDeleteScheduledTodo } from '../todosPage'
 
 const scheduledTodoId = S.decodeUnknownSync(ScheduledTodoId)('scheduled-todo-1')
 const cronExpression = CronExpression.make
 const todoText = TodoText.make
 
 describe('scheduled todo form commands', () => {
-  test('CreateScheduledTodo calls the scheduled todos backend with text and cron', async () => {
-    const layer = makeScheduledTodosBackendTestLayer({
-      scheduledTodos: Stream.empty,
-      create: ({ text, cron }) =>
-        text === todoText('gym') && cron === cronExpression('0 7 * * *')
-          ? Effect.succeed(scheduledTodoId)
-          : Effect.fail(
-              new ScheduledTodosBackendError({
-                operation: 'CreateScheduledTodo',
-                message: errorMessage('Unexpected schedule args'),
-                cause: { text, cron },
-              }),
-            ),
-      delete: () => Effect.succeed(Option.none()),
-    })
+  it.effect('CreateScheduledTodo calls the scheduled todos backend with text and cron', () =>
+    Effect.gen(function* () {
+      const scheduledTodos = makeScheduledTodosBackendTestHarness({
+        create: ({ text, cron }) =>
+          text === todoText('gym') && cron === cronExpression('0 7 * * *')
+            ? Effect.succeed(scheduledTodoId)
+            : Effect.fail(
+                new ScheduledTodosBackendError({
+                  operation: 'CreateScheduledTodo',
+                  message: errorMessage('Unexpected schedule args'),
+                  cause: { text, cron },
+                }),
+              ),
+      })
 
-    const message = await CreateScheduledTodo({
-      text: todoText('gym'),
-      cron: cronExpression('0 7 * * *'),
-    }).effect.pipe(Effect.provide(layer), Effect.runPromise)
+      const message = yield* CreateScheduledTodo({
+        text: todoText('gym'),
+        cron: cronExpression('0 7 * * *'),
+      }).effect.pipe(Effect.provide(scheduledTodos.layer))
 
-    expect(message).toStrictEqual(
-      CreatedScheduledTodo({ id: scheduledTodoId }),
-    )
-  })
+      expect(message).toStrictEqual(
+        CreatedScheduledTodo({ id: scheduledTodoId }),
+      )
+      expect(yield* scheduledTodos.calls).toStrictEqual([
+        {
+          _tag: 'CreateScheduledTodo',
+          text: todoText('gym'),
+          cron: cronExpression('0 7 * * *'),
+        },
+      ])
+    }),
+  )
 
-  test('CreateScheduledTodo returns typed user-facing backend failures', async () => {
-    const layer = makeScheduledTodosBackendTestLayer({
-      scheduledTodos: Stream.empty,
-      create: () =>
-        Effect.fail(
-          new ScheduledTodosBackendError({
-            operation: 'CreateScheduledTodo',
-            message: errorMessage('Enter a valid cron expression.'),
-            cause: 'invalid cron',
-          }),
-        ),
-      delete: () => Effect.succeed(Option.none()),
-    })
+  it.effect('CreateScheduledTodo returns typed user-facing backend failures', () =>
+    Effect.gen(function* () {
+      const scheduledTodos = makeScheduledTodosBackendTestHarness({
+        create: () =>
+          Effect.fail(
+            new ScheduledTodosBackendError({
+              operation: 'CreateScheduledTodo',
+              message: errorMessage('Enter a valid cron expression.'),
+              cause: 'invalid cron',
+            }),
+          ),
+      })
 
-    const message = await CreateScheduledTodo({
-      text: todoText('gym'),
-      cron: cronExpression('not cron'),
-    }).effect.pipe(Effect.provide(layer), Effect.runPromise)
+      const message = yield* CreateScheduledTodo({
+        text: todoText('gym'),
+        cron: cronExpression('not cron'),
+      }).effect.pipe(Effect.provide(scheduledTodos.layer))
 
-    expect(message).toStrictEqual(
-      FailedCreateScheduledTodo({
-        error: errorMessage('Enter a valid cron expression.'),
-      }),
-    )
-  })
+      expect(message).toStrictEqual(
+        FailedCreateScheduledTodo({
+          error: errorMessage('Enter a valid cron expression.'),
+        }),
+      )
+      expect(yield* scheduledTodos.calls).toStrictEqual([
+        {
+          _tag: 'CreateScheduledTodo',
+          text: todoText('gym'),
+          cron: cronExpression('not cron'),
+        },
+      ])
+    }),
+  )
 
-  test('DeleteScheduledTodo calls the scheduled todos backend', async () => {
-    const layer = makeScheduledTodosBackendTestLayer({
-      scheduledTodos: Stream.empty,
-      create: () => Effect.succeed(scheduledTodoId),
-      delete: id =>
-        id === scheduledTodoId
-          ? Effect.succeed(Option.some(id))
-          : Effect.fail(
-              new ScheduledTodosBackendError({
-                operation: 'DeleteScheduledTodo',
-                message: errorMessage('Unexpected scheduled todo id'),
-                cause: id,
-              }),
-            ),
-    })
+  it.effect('DeleteScheduledTodo calls the scheduled todos backend', () =>
+    Effect.gen(function* () {
+      const scheduledTodos = makeScheduledTodosBackendTestHarness({
+        delete: id =>
+          id === scheduledTodoId
+            ? Effect.succeed(Option.some(id))
+            : Effect.fail(
+                new ScheduledTodosBackendError({
+                  operation: 'DeleteScheduledTodo',
+                  message: errorMessage('Unexpected scheduled todo id'),
+                  cause: id,
+                }),
+              ),
+      })
 
-    const message = await DeleteScheduledTodo({
-      id: scheduledTodoId,
-    }).effect.pipe(Effect.provide(layer), Effect.runPromise)
+      const message = yield* DeleteScheduledTodo({
+        id: scheduledTodoId,
+      }).effect.pipe(Effect.provide(scheduledTodos.layer))
 
-    expect(message).toStrictEqual(DeletedScheduledTodo())
-  })
+      expect(message).toStrictEqual(DeletedScheduledTodo())
+      expect(yield* scheduledTodos.calls).toStrictEqual([
+        { _tag: 'DeleteScheduledTodo', id: scheduledTodoId },
+      ])
+    }),
+  )
+
+  it.effect('DeleteScheduledTodo turns backend failures into FailedDeleteScheduledTodo', () =>
+    Effect.gen(function* () {
+      const scheduledTodos = makeScheduledTodosBackendTestHarness({
+        delete: () =>
+          Effect.fail(
+            new ScheduledTodosBackendError({
+              operation: 'DeleteScheduledTodo',
+              message: errorMessage('Delete scheduled failed'),
+              cause: 'offline',
+            }),
+          ),
+      })
+
+      const message = yield* DeleteScheduledTodo({
+        id: scheduledTodoId,
+      }).effect.pipe(Effect.provide(scheduledTodos.layer))
+
+      expect(message).toStrictEqual(
+        FailedDeleteScheduledTodo({
+          error: errorMessage('Delete scheduled failed'),
+        }),
+      )
+      expect(yield* scheduledTodos.calls).toStrictEqual([
+        { _tag: 'DeleteScheduledTodo', id: scheduledTodoId },
+      ])
+    }),
+  )
 })

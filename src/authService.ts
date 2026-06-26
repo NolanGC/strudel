@@ -11,6 +11,7 @@ import {
   Schema as S,
   Stream,
 } from 'effect'
+import { KeyValueStore } from 'effect/unstable/persistence'
 import { ts } from 'foldkit/schema'
 
 import { ErrorMessage, errorMessage } from './errorMessage'
@@ -51,9 +52,7 @@ const authErrorMessage = (operation: AuthOperation): ErrorMessage =>
   M.value(operation).pipe(
     M.when('ReadAuthState', () => errorMessage('Could not load auth state.')),
     M.when('SignIn', () => errorMessage('Could not start sign-in.')),
-    M.when('SendMagicLink', () =>
-      errorMessage('Could not send sign-in link.'),
-    ),
+    M.when('SendMagicLink', () => errorMessage('Could not send sign-in link.')),
     M.when('SignOut', () => errorMessage('Could not sign out.')),
     M.when('FetchToken', () => errorMessage('Authentication failed.')),
     M.exhaustive,
@@ -72,7 +71,7 @@ type FetchTokenArgs = {
   readonly forceRefreshToken: boolean
 }
 
-type AuthServiceShape = {
+export type AuthServiceShape = {
   readonly authState: Stream.Stream<AuthState, AuthServiceError>
   readonly signInWithGitHub: Effect.Effect<void, AuthServiceError>
   readonly sendMagicLink: (
@@ -91,7 +90,6 @@ export class AuthService extends Context.Service<
 
 type ConvexAuthLayerOptions = {
   readonly convexUrl: string
-  readonly storage?: Storage
   readonly storageNamespace?: string
 }
 
@@ -133,6 +131,41 @@ const JwtPayload = S.Struct({
 type JwtPayload = typeof JwtPayload.Type
 
 const authenticatedUserDisplayName = 'Authenticated user'
+const templateAuthStorageKey = 'strudel:template-auth-state'
+const TemplateAuthStoredState = S.Literals(['SignedIn', 'SignedOut'])
+type TemplateAuthStoredState = typeof TemplateAuthStoredState.Type
+
+const readTemplateAuthStoredState: Effect.Effect<
+  TemplateAuthStoredState,
+  never,
+  KeyValueStore.KeyValueStore
+> = Effect.gen(function* () {
+  const store = yield* KeyValueStore.KeyValueStore
+  const stored = yield* store
+    .get(templateAuthStorageKey)
+    .pipe(Effect.catch(() => Effect.succeed(null)))
+
+  return stored === 'SignedOut' ? 'SignedOut' : 'SignedIn'
+})
+
+export const readTemplateAuthState = ({
+  displayName = 'Template user',
+}: {
+  readonly displayName?: string
+} = {}): Effect.Effect<AuthState, never, KeyValueStore.KeyValueStore> =>
+  readTemplateAuthStoredState.pipe(
+    Effect.map(state =>
+      state === 'SignedOut'
+        ? AuthSignedOut()
+        : AuthSignedIn({
+            session: AuthSession.make({ displayName }),
+          }),
+    ),
+  )
+
+const redirectToTodos: Effect.Effect<void, never> = Effect.sync(() => {
+  globalThis.window.location.href = '/todos'
+})
 
 const jwtPayloadSegment = (token: string): Effect.Effect<string, unknown> =>
   Effect.fromOption(Option.fromNullishOr(token.split('.')[1]))
@@ -184,15 +217,35 @@ const tokenToAuthState = (
     })
   })
 
+export const readStoredAuthState = ({
+  storageNamespace,
+}: {
+  readonly storageNamespace: string
+}): Effect.Effect<AuthState, AuthServiceError, KeyValueStore.KeyValueStore> =>
+  Effect.gen(function* () {
+    const storage = yield* KeyValueStore.KeyValueStore
+    const jwtKey = storageKey(storageNamespace, JWT_STORAGE_KEY)
+    const storedToken = yield* storage.get(jwtKey).pipe(
+      Effect.map(value => value ?? null),
+      Effect.mapError(toAuthServiceError('ReadAuthState')),
+    )
+
+    return yield* tokenToAuthState(storedToken)
+  })
+
 export const AuthServiceConvexAuthLive = ({
   convexUrl,
-  storage = globalThis.window.localStorage,
   storageNamespace = convexUrl,
-}: ConvexAuthLayerOptions): Layer.Layer<AuthService> =>
+}: ConvexAuthLayerOptions): Layer.Layer<
+  AuthService,
+  never,
+  KeyValueStore.KeyValueStore
+> =>
   Layer.effect(
     AuthService,
     Effect.gen(function* () {
       const client = new ConvexHttpClient(convexUrl)
+      const storage = yield* KeyValueStore.KeyValueStore
       const tokenRef = yield* Ref.make<string | null>(null)
 
       const jwtKey = storageKey(storageNamespace, JWT_STORAGE_KEY)
@@ -206,29 +259,25 @@ export const AuthServiceConvexAuthLive = ({
         operation: AuthOperation,
         key: string,
       ): Effect.Effect<string | null, AuthServiceError> =>
-        Effect.try({
-          try: () => storage.getItem(key),
-          catch: toAuthServiceError(operation),
-        })
+        storage.get(key).pipe(
+          Effect.map(value => value ?? null),
+          Effect.mapError(toAuthServiceError(operation)),
+        )
 
       const storageSet = (
         operation: AuthOperation,
         key: string,
         value: string,
       ): Effect.Effect<void, AuthServiceError> =>
-        Effect.try({
-          try: () => storage.setItem(key, value),
-          catch: toAuthServiceError(operation),
-        })
+        storage
+          .set(key, value)
+          .pipe(Effect.mapError(toAuthServiceError(operation)))
 
       const storageRemove = (
         operation: AuthOperation,
         key: string,
       ): Effect.Effect<void, AuthServiceError> =>
-        Effect.try({
-          try: () => storage.removeItem(key),
-          catch: toAuthServiceError(operation),
-        })
+        storage.remove(key).pipe(Effect.mapError(toAuthServiceError(operation)))
 
       const setTokens = (
         operation: AuthOperation,
@@ -417,13 +466,13 @@ export const AuthServiceConvexAuthLive = ({
       const signInWithGitHub: Effect.Effect<void, AuthServiceError> = Effect.fn(
         'AuthService.signInWithGitHub',
       )(function* () {
-          const result = yield* authActionWithCurrentToken('SignIn', {
-            provider: 'github',
-            params: { redirectTo: '/todos' },
-          })
+        const result = yield* authActionWithCurrentToken('SignIn', {
+          provider: 'github',
+          params: { redirectTo: '/todos' },
+        })
 
-          yield* handleSignInResult('SignIn', result)
-        })()
+        yield* handleSignInResult('SignIn', result)
+      })()
 
       const sendMagicLink = (
         email: string,
@@ -440,14 +489,14 @@ export const AuthServiceConvexAuthLive = ({
       const signOut: Effect.Effect<void, AuthServiceError> = Effect.fn(
         'AuthService.signOut',
       )(function* () {
-          const revokeRemoteSessionIfPossible = Effect.gen(function* () {
-            yield* setClientAuthFromCurrentToken('SignOut')
-            yield* signOutAction
-          }).pipe(Effect.ignore)
+        const revokeRemoteSessionIfPossible = Effect.gen(function* () {
+          yield* setClientAuthFromCurrentToken('SignOut')
+          yield* signOutAction
+        }).pipe(Effect.ignore)
 
-          yield* revokeRemoteSessionIfPossible
-          yield* setTokens('SignOut', null)
-        })()
+        yield* revokeRemoteSessionIfPossible
+        yield* setTokens('SignOut', null)
+      })()
 
       const fetchToken = ({
         forceRefreshToken,
@@ -455,15 +504,15 @@ export const AuthServiceConvexAuthLive = ({
         string | null | undefined,
         AuthServiceError
       > =>
-        Effect.fn('AuthService.fetchToken')(
-          function* ({ forceRefreshToken }: FetchTokenArgs) {
-            if (forceRefreshToken) {
-              return yield* loadAuthState.pipe(Effect.andThen(refreshToken))
-            }
+        Effect.fn('AuthService.fetchToken')(function* ({
+          forceRefreshToken,
+        }: FetchTokenArgs) {
+          if (forceRefreshToken) {
+            return yield* loadAuthState.pipe(Effect.andThen(refreshToken))
+          }
 
-            return yield* readCurrentToken
-          },
-        )({ forceRefreshToken })
+          return yield* readCurrentToken
+        })({ forceRefreshToken })
 
       return {
         authState: Stream.fromEffect(loadAuthState),
@@ -478,3 +527,67 @@ export const AuthServiceConvexAuthLive = ({
 export const makeAuthServiceTestLayer = (
   service: AuthServiceShape,
 ): Layer.Layer<AuthService> => Layer.succeed(AuthService, service)
+
+export const AuthServiceTemplateLive = ({
+  displayName = 'Template user',
+}: {
+  readonly displayName?: string
+} = {}): Layer.Layer<AuthService, never, KeyValueStore.KeyValueStore> =>
+  Layer.effect(
+    AuthService,
+    Effect.gen(function* () {
+      const store = yield* KeyValueStore.KeyValueStore
+
+      const readStoredState: Effect.Effect<TemplateAuthStoredState> = store
+        .get(templateAuthStorageKey)
+        .pipe(
+          Effect.catch(() => Effect.succeed(null)),
+          Effect.map(stored =>
+            stored === 'SignedOut' ? 'SignedOut' : 'SignedIn',
+          ),
+        )
+
+      const setStoredState = (
+        state: TemplateAuthStoredState,
+      ): Effect.Effect<void> =>
+        store
+          .set(templateAuthStorageKey, state)
+          .pipe(Effect.catch(() => Effect.void))
+
+      const readAuthState = readStoredState.pipe(
+        Effect.map(state =>
+          state === 'SignedOut'
+            ? AuthSignedOut()
+            : AuthSignedIn({
+                session: AuthSession.make({ displayName }),
+              }),
+        ),
+      )
+
+      return {
+        authState: Stream.fromEffect(readAuthState),
+        signInWithGitHub: Effect.fn('AuthService.templateSignInWithGitHub')(
+          function* () {
+            yield* setStoredState('SignedIn')
+            yield* redirectToTodos
+          },
+        )(),
+        sendMagicLink: (email: string) =>
+          Effect.fn('AuthService.templateSendMagicLink')(function* (
+            _email: string,
+          ) {
+            yield* setStoredState('SignedIn')
+            yield* redirectToTodos
+          })(email),
+        signOut: Effect.fn('AuthService.templateSignOut')(function* () {
+          yield* setStoredState('SignedOut')
+        })(),
+        fetchToken: Effect.fn('AuthService.templateFetchToken')(function* (
+          _args: FetchTokenArgs,
+        ) {
+          const state = yield* readStoredState
+          return state === 'SignedIn' ? 'template-auth-token' : null
+        }),
+      } satisfies AuthServiceShape
+    }),
+  )

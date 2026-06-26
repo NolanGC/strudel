@@ -3,6 +3,32 @@
 This scaffold uses Convex Auth for provisioned apps and exposes it to Foldkit
 through `AuthService`.
 
+## Template Auth
+
+Fresh clones can run without a GitHub OAuth app or Resend key. When
+`VITE_AUTH_MODE=template`, or when `VITE_CONVEX_URL` is absent, the browser app
+uses template auth:
+
+- the app starts signed in as `Template user` by default;
+- auth state is backed by `KeyValueStore`;
+- signing out writes a local signed-out state;
+- clicking a sign-in button writes the local signed-in state and returns to
+  `/todos`;
+- todos and scheduled todos use in-memory template backend layers.
+
+Template auth is for local starter development only. It does not exercise
+server authorization. Backend auth and permission tests should continue to use
+Confect's test harness with `withIdentity(...)`.
+
+To force template mode:
+
+```bash
+VITE_AUTH_MODE=template bun run dev
+```
+
+To use real Convex Auth, set `VITE_AUTH_MODE=convex` and configure the Convex
+Auth environment described below.
+
 ## Frontend
 
 `src/authService.ts` implements the minimal Convex Auth browser flow without

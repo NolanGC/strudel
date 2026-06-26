@@ -75,7 +75,7 @@ const toBackendError =
       cause,
     })
 
-type ScheduledTodosBackendShape = {
+export type ScheduledTodosBackendShape = {
   readonly scheduledTodos: Stream.Stream<
     ReadonlyArray<ScheduledTodo>,
     ScheduledTodosBackendError

@@ -1,4 +1,6 @@
+import { BrowserKeyValueStore } from '@effect/platform-browser'
 import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
+import { KeyValueStore } from 'effect/unstable/persistence'
 import { Command, Runtime, Subscription } from 'foldkit'
 import { Document, Html, html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -6,8 +8,14 @@ import { UrlRequest, load, pushUrl } from 'foldkit/navigation'
 import { evo } from 'foldkit/struct'
 import { Url, toString as urlToString } from 'foldkit/url'
 
-import { AuthService, AuthSignedOut, AuthState } from './authService'
 import * as AuthPanel from './authPanel'
+import {
+  AuthService,
+  AuthSignedOut,
+  AuthState,
+  readStoredAuthState,
+  readTemplateAuthState,
+} from './authService'
 import { ErrorMessage } from './errorMessage'
 import * as ImageUploadsPage from './page/imageUploads'
 import * as ScheduledTodosPage from './page/scheduledTodos'
@@ -81,18 +89,20 @@ export type Message = typeof Message.Type
 
 // FLAGS
 
-export const Flags = S.Struct({})
+export const Flags = S.Struct({
+  initialAuthState: AuthState,
+})
 export type Flags = typeof Flags.Type
 
 // INIT
 
 export const init: Runtime.RoutingProgramInit<Model, Message, Flags> = (
-  _flags,
+  flags,
   url,
 ) => [
   {
     route: urlToAppRoute(url),
-    authState: { _tag: 'AuthChecking' },
+    authState: flags.initialAuthState,
     authPanel: AuthPanel.init(),
     todosPage: TodosPage.init(),
     scheduledTodosPage: ScheduledTodosPage.init(),
@@ -240,7 +250,9 @@ const handleGotImageUploadsPageMessage = (
   )
   return [
     evo(model, { imageUploadsPage: () => imageUploadsPage }),
-    Command.mapMessages(commands, message => GotImageUploadsPageMessage({ message })),
+    Command.mapMessages(commands, message =>
+      GotImageUploadsPageMessage({ message }),
+    ),
   ]
 }
 
@@ -345,21 +357,38 @@ export const subscriptions = Subscription.make<
           Stream.fromEffect(TodosBackend).pipe(
             Stream.flatMap(backend =>
               backend.todos.pipe(
-                Stream.map(todos => route._tag === 'ImageUploads'
-                  ? GotImageUploadsPageMessage({ message: ImageUploadsPage.LoadedTodos({ todos }) })
-                  : GotTodosPageMessage({ message: TodosPage.LoadedTodos({ todos }) }),
+                Stream.map(todos =>
+                  route._tag === 'ImageUploads'
+                    ? GotImageUploadsPageMessage({
+                        message: ImageUploadsPage.LoadedTodos({ todos }),
+                      })
+                    : GotTodosPageMessage({
+                        message: TodosPage.LoadedTodos({ todos }),
+                      }),
                 ),
                 Stream.catch(error =>
                   Stream.succeed(
                     route._tag === 'ImageUploads'
-                      ? GotImageUploadsPageMessage({ message: ImageUploadsPage.FailedLoadTodos({ error: error.message }) })
-                      : GotTodosPageMessage({ message: TodosPage.FailedLoadTodos({ error: error.message }) }),
+                      ? GotImageUploadsPageMessage({
+                          message: ImageUploadsPage.FailedLoadTodos({
+                            error: error.message,
+                          }),
+                        })
+                      : GotTodosPageMessage({
+                          message: TodosPage.FailedLoadTodos({
+                            error: error.message,
+                          }),
+                        }),
                   ),
                 ),
               ),
             ),
           ),
-          Effect.sync(() => isSignedIn && (route._tag === 'Todos' || route._tag === 'ImageUploads')),
+          Effect.sync(
+            () =>
+              isSignedIn &&
+              (route._tag === 'Todos' || route._tag === 'ImageUploads'),
+          ),
         ),
     },
   ),
@@ -525,7 +554,8 @@ const protectedPageView = (model: Model): Html => {
                 slotId: 'image-uploads-page',
                 model: model.imageUploadsPage,
                 view: ImageUploadsPage.view,
-                toParentMessage: message => GotImageUploadsPageMessage({ message }),
+                toParentMessage: message =>
+                  GotImageUploadsPageMessage({ message }),
               }),
             Home: () => h.empty,
             NotFound: () => h.empty,
@@ -537,11 +567,23 @@ const protectedPageView = (model: Model): Html => {
 
 const authenticatedNavigationView = (): Html => {
   const h = html<Message>()
-  return h.nav([h.Class('mx-auto mb-4 flex max-w-3xl gap-4 text-sm')], [
-    h.a([h.Href(todosRouter({})), h.Class('text-blue-700 underline')], ['Todos']),
-    h.a([h.Href(scheduledTodosRouter({})), h.Class('text-blue-700 underline')], ['Scheduled todos']),
-    h.a([h.Href(imageUploadsRouter({})), h.Class('text-blue-700 underline')], ['Image uploads']),
-  ])
+  return h.nav(
+    [h.Class('mx-auto mb-4 flex max-w-3xl gap-4 text-sm')],
+    [
+      h.a(
+        [h.Href(todosRouter({})), h.Class('text-blue-700 underline')],
+        ['Todos'],
+      ),
+      h.a(
+        [h.Href(scheduledTodosRouter({})), h.Class('text-blue-700 underline')],
+        ['Scheduled todos'],
+      ),
+      h.a(
+        [h.Href(imageUploadsRouter({})), h.Class('text-blue-700 underline')],
+        ['Image uploads'],
+      ),
+    ],
+  )
 }
 
 const notFoundView = (): Html => {
@@ -597,7 +639,42 @@ export const view = (model: Model): Document => {
 
 // FLAG
 
-export const flags: Effect.Effect<Flags> = Effect.succeed({})
+export const makeFlagsFromKeyValueStore = ({
+  storageNamespace,
+}: {
+  readonly storageNamespace: string
+}): Effect.Effect<Flags, never, KeyValueStore.KeyValueStore> =>
+  readStoredAuthState({ storageNamespace }).pipe(
+    Effect.catch(() => Effect.succeed(AuthSignedOut())),
+    Effect.map(initialAuthState => Flags.make({ initialAuthState })),
+  )
+
+export const makeFlags = ({
+  storageNamespace,
+}: {
+  readonly storageNamespace: string
+}): Effect.Effect<Flags> =>
+  makeFlagsFromKeyValueStore({ storageNamespace }).pipe(
+    Effect.provide(BrowserKeyValueStore.layerLocalStorage),
+  )
+
+export const makeTemplateFlagsFromKeyValueStore = ({
+  displayName,
+}: {
+  readonly displayName?: string
+} = {}): Effect.Effect<Flags, never, KeyValueStore.KeyValueStore> =>
+  readTemplateAuthState(displayName === undefined ? {} : { displayName }).pipe(
+    Effect.map(initialAuthState => Flags.make({ initialAuthState })),
+  )
+
+export const makeTemplateFlags = ({
+  displayName,
+}: {
+  readonly displayName?: string
+} = {}): Effect.Effect<Flags> =>
+  makeTemplateFlagsFromKeyValueStore(
+    displayName === undefined ? {} : { displayName },
+  ).pipe(Effect.provide(BrowserKeyValueStore.layerLocalStorage))
 
 export {
   ClickedSignInWithGitHub,

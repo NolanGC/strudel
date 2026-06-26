@@ -22,8 +22,13 @@ import * as TodosPage from '../todosPage'
 import * as ScheduledTodosPage from '../page/scheduledTodos'
 import * as ImageUploadsPage from '../page/imageUploads'
 import { errorMessage } from '../errorMessage'
+import { CronExpression, EpochMillis, TodoText, UserId } from '../../confect/domain'
 
 const scheduledTodoId = S.decodeUnknownSync(ScheduledTodoId)('scheduled-todo-1')
+const cronExpression = CronExpression.make
+const epochMillis = EpochMillis.make
+const todoText = TodoText.make
+const userId = UserId.make
 
 const signedInModel: Model = {
   route: TodosRoute(),
@@ -59,10 +64,12 @@ describe('scheduled todo form scene', () => {
             {
               _id: scheduledTodoId,
               _creationTime: 1000,
-              ownerUserId: 'user-a',
-              text: 'gym',
-              cron: '0 7 * * *',
-              nextRunAt: new Date('2026-06-18T07:00:00.000Z').getTime(),
+              ownerUserId: userId('user-a'),
+              text: todoText('gym'),
+              cron: cronExpression('0 7 * * *'),
+              nextRunAt: epochMillis(
+                new Date('2026-06-18T07:00:00.000Z').getTime(),
+              ),
             },
           ],
         },
@@ -87,10 +94,12 @@ describe('scheduled todo form scene', () => {
             {
               _id: scheduledTodoId,
               _creationTime: 1000,
-              ownerUserId: 'user-a',
-              text: 'gym',
-              cron: '0 7 * * *',
-              nextRunAt: new Date('2026-06-18T07:00:00.000Z').getTime(),
+              ownerUserId: userId('user-a'),
+              text: todoText('gym'),
+              cron: cronExpression('0 7 * * *'),
+              nextRunAt: epochMillis(
+                new Date('2026-06-18T07:00:00.000Z').getTime(),
+              ),
             },
           ],
         },
